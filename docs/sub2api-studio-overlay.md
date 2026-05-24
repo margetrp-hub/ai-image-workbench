@@ -15,7 +15,7 @@
 
 ## Prompt Sources
 
-Community prompt galleries and public examples are used as prompt sources and case-material sources only. They are not the source, ownership, or parent project of this repository.
+Community prompt galleries and public examples are used as prompt sources and case-material sources only. They are reference-only materials, not code ownership or asset ownership claims for this repository.
 
 Keep third-party prompt attribution in template data or documentation. Do not present prompt-source projects as the project origin.
 

@@ -182,6 +182,8 @@ Community prompt projects and public examples are used as prompt-source referenc
 
 Prompt template content comes from community sources and follows `CC BY 4.0` where applicable. Keep attribution to original authors or sources when using or adapting it.
 
+See [Acknowledgements and Reference Boundaries](docs/ACKNOWLEDGEMENTS.md) for the project/source/asset boundary.
+
 ## Author & License
 
 Maintainer: [@margetrp-hub](https://github.com/margetrp-hub)

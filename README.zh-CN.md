@@ -182,6 +182,8 @@ npm run check:sub2api
 
 提示词模板内容来自社区，适用时遵循 `CC BY 4.0` 许可证；使用和改编时请保留原作者或来源归属。
 
+项目来源、参考来源和素材边界见：[致谢与参考边界](docs/ACKNOWLEDGEMENTS.zh-CN.md)。
+
 ## 作者与授权
 
 维护者：[@margetrp-hub](https://github.com/margetrp-hub)
