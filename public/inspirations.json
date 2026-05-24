@@ -1,0 +1,25 @@
+{
+  "sources": [
+    {
+      "name": "Community prompt templates",
+      "url": "https://creativecommons.org/licenses/by/4.0/",
+      "license": "CC-BY-4.0",
+      "commercialUse": "allowed-with-attribution",
+      "attributionRequired": true,
+      "ingestMode": "curated-sample"
+    }
+  ],
+  "sourceCounts": [
+    {
+      "sourceUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "sourceName": "Community prompt templates",
+      "count": 0,
+      "kept": 0
+    }
+  ],
+  "totalCases": 0,
+  "parsedCases": 0,
+  "categories": [],
+  "cases": [],
+  "errors": []
+}

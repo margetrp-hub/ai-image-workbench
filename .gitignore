@@ -1,0 +1,50 @@
+.DS_Store
+
+# Dependencies and local build output
+node_modules/
+dist/
+.vercel/
+
+# Local environment and runtime data
+.env
+.env.*
+!.env.example
+.ohlaoo-studio-data/
+.image-sub2api-studio-data/
+.tmp-history-test/
+
+# Local legacy/source-material snapshots kept out of the public package
+.claude-plugin/
+.github/
+agents/
+api/
+supabase/
+data/
+gallery.html
+docs.html
+docs/gallery*.md
+docs/disclaimer.md
+src/assets/
+src/docs.css
+src/docs.jsx
+src/main.jsx
+src/supabaseClient.js
+scripts/generate-inspiration-data.mjs
+scripts/generate-site-data.mjs
+scripts/generate-style-skill.mjs
+scripts/generate-thumbnails.mjs
+scripts/google-analytics-oauth.mjs
+scripts/install-style-skill.mjs
+
+# Generated deployment packages and local QA output
+release/
+output/
+.tmp/
+.kiro/
+.playwright-cli/
+*.zip
+*.zip.csupload
+
+# Logs
+npm-debug.log*
+src/styles.css

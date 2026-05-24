@@ -1,0 +1,5 @@
+{
+  "updatedAt": "2026-05-24",
+  "note": "Add your own prompt-source registry here if you build a private library ingestion flow.",
+  "sources": []
+}

@@ -1,0 +1,23 @@
+[Unit]
+Description=image-sub2api-studio per-user history service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/image-sub2api-studio
+Environment=NODE_ENV=production
+Environment=SUB2API_BASE_URL=http://127.0.0.1:8080
+Environment=STUDIO_DATA_DIR=/var/lib/image-sub2api-studio
+Environment=STUDIO_LIBRARY_DIR=/var/lib/image-sub2api-studio/library
+Environment=STUDIO_LIBRARY_ASSET_DIR=/var/lib/image-sub2api-studio/library/images
+Environment=STUDIO_HISTORY_HOST=127.0.0.1
+Environment=STUDIO_HISTORY_PORT=8787
+Environment=STUDIO_ALLOWED_ORIGINS=https://studio.example.com
+ExecStart=/usr/bin/node /opt/image-sub2api-studio/scripts/image-sub2api-studio-history-service.mjs
+Restart=always
+RestartSec=3
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target

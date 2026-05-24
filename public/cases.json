@@ -1,0 +1,130 @@
+{
+  "repository": "https://github.com/margetrp-hub/image-sub2api-studio",
+  "totalCases": 6,
+  "license": {
+    "name": "社区提示词模板 · CC BY 4.0",
+    "spdx": "CC-BY-4.0",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "notice": "提示词模板内容来自公开社区，遵循 CC BY 4.0 许可证；使用和改编时请保留原作者或来源归属。"
+  },
+  "categories": [
+    "Brand & Logos",
+    "Charts & Infographics",
+    "Photography & Realism",
+    "Posters & Typography",
+    "Products & E-commerce",
+    "UI & Interfaces"
+  ],
+  "styles": [
+    "Brand",
+    "Infographic",
+    "Poster",
+    "Product",
+    "Realistic",
+    "UI"
+  ],
+  "scenes": [
+    "Commerce",
+    "Education",
+    "Social",
+    "Tech"
+  ],
+  "cases": [
+    {
+      "id": 1,
+      "title": "电商主图",
+      "image": "",
+      "thumbnail": "",
+      "imageAlt": "电商主图模板",
+      "sourceLabel": "Community template",
+      "sourceUrl": "",
+      "sourceName": "CC BY 4.0 community prompts",
+      "prompt": "商业产品摄影，主体居中，纯净浅色背景，柔和棚拍灯光，边缘高光清晰，材质纹理可见，留出少量促销文字空间，适合电商主图。",
+      "promptPreview": "商业产品摄影，主体居中，纯净浅色背景，柔和棚拍灯光，边缘高光清晰，材质纹理可见，留出少量促销文字空间，适合电商主图。",
+      "category": "Products & E-commerce",
+      "styles": ["Product", "Realistic"],
+      "scenes": ["Commerce"],
+      "featured": true
+    },
+    {
+      "id": 2,
+      "title": "品牌海报",
+      "image": "",
+      "thumbnail": "",
+      "imageAlt": "品牌海报模板",
+      "sourceLabel": "Community template",
+      "sourceUrl": "",
+      "sourceName": "CC BY 4.0 community prompts",
+      "prompt": "品牌视觉海报，强构图层级，清晰主标题留白区，主体与图形元素形成对角线动势，高级商业广告质感，适合活动推广。",
+      "promptPreview": "品牌视觉海报，强构图层级，清晰主标题留白区，主体与图形元素形成对角线动势，高级商业广告质感，适合活动推广。",
+      "category": "Posters & Typography",
+      "styles": ["Poster", "Brand"],
+      "scenes": ["Commerce"],
+      "featured": true
+    },
+    {
+      "id": 3,
+      "title": "界面样机",
+      "image": "",
+      "thumbnail": "",
+      "imageAlt": "界面样机模板",
+      "sourceLabel": "Community template",
+      "sourceUrl": "",
+      "sourceName": "CC BY 4.0 community prompts",
+      "prompt": "现代产品界面样机，真实设备或浏览器框架，界面信息清楚可读，背景简洁，光影克制，突出工作流和关键操作状态。",
+      "promptPreview": "现代产品界面样机，真实设备或浏览器框架，界面信息清楚可读，背景简洁，光影克制，突出工作流和关键操作状态。",
+      "category": "UI & Interfaces",
+      "styles": ["UI", "Product"],
+      "scenes": ["Tech"],
+      "featured": true
+    },
+    {
+      "id": 4,
+      "title": "信息图解释",
+      "image": "",
+      "thumbnail": "",
+      "imageAlt": "信息图解释模板",
+      "sourceLabel": "Community template",
+      "sourceUrl": "",
+      "sourceName": "CC BY 4.0 community prompts",
+      "prompt": "生成一张结构清晰的信息图，主题为产品工作流说明，包含标题区、三到五个模块、箭头关系和简短说明，文字清晰可读，配色克制专业。",
+      "promptPreview": "生成一张结构清晰的信息图，主题为产品工作流说明，包含标题区、三到五个模块、箭头关系和简短说明，文字清晰可读，配色克制专业。",
+      "category": "Charts & Infographics",
+      "styles": ["Infographic", "UI"],
+      "scenes": ["Education", "Tech"],
+      "featured": false
+    },
+    {
+      "id": 5,
+      "title": "社媒封面",
+      "image": "",
+      "thumbnail": "",
+      "imageAlt": "社媒封面模板",
+      "sourceLabel": "Community template",
+      "sourceUrl": "",
+      "sourceName": "CC BY 4.0 community prompts",
+      "prompt": "生成一张社媒封面图，画面有强焦点，版式现代，颜色鲜明但不过度，预留短标题空间，光影精致，适合内容平台、短视频或活动封面。",
+      "promptPreview": "生成一张社媒封面图，画面有强焦点，版式现代，颜色鲜明但不过度，预留短标题空间，光影精致，适合内容平台、短视频或活动封面。",
+      "category": "Posters & Typography",
+      "styles": ["Poster", "Brand"],
+      "scenes": ["Social"],
+      "featured": false
+    },
+    {
+      "id": 6,
+      "title": "头像写真",
+      "image": "",
+      "thumbnail": "",
+      "imageAlt": "头像写真模板",
+      "sourceLabel": "Community template",
+      "sourceUrl": "",
+      "sourceName": "CC BY 4.0 community prompts",
+      "prompt": "生成一张精修头像写真，保留自然肤质和真实五官，眼神有表达力，背景干净，柔和侧光，气质自信，成片接近高端编辑写真。",
+      "promptPreview": "生成一张精修头像写真，保留自然肤质和真实五官，眼神有表达力，背景干净，柔和侧光，气质自信，成片接近高端编辑写真。",
+      "category": "Photography & Realism",
+      "styles": ["Realistic"],
+      "scenes": ["Social"],
+      "featured": false
+    }
+  ]
+}

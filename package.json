@@ -1,0 +1,22 @@
+{
+  "name": "image-sub2api-studio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "check:sub2api": "node scripts/check-sub2api-contract.mjs",
+    "history:service": "node scripts/image-sub2api-studio-history-service.mjs",
+    "dev": "vite",
+    "dev:studio": "vite --open /studio.html",
+    "build": "vite build",
+    "build:studio": "vite build --base=/studio/",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.1.1",
+    "lucide-react": "^0.561.0",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "vite": "^7.2.7"
+  }
+}
