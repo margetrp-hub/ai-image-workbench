@@ -670,7 +670,7 @@ select:disabled {
 
 .historyTile {
   width: 100%;
-  padding: 9px;
+  padding: 10px;
   border: 1px solid transparent;
   background: #f7f3ea;
   color: #17211b;
@@ -685,20 +685,21 @@ select:disabled {
 
 .historyOpen {
   width: 100%;
-  min-height: 90px;
+  min-height: 138px;
   padding: 0;
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: 116px minmax(0, 1fr);
   align-items: start;
-  gap: 10px;
+  gap: 12px;
   background: transparent;
   color: #17211b;
   text-align: left;
 }
 
 .historyThumb {
-  width: 72px;
-  height: 72px;
+  position: relative;
+  width: 116px;
+  height: 116px;
   border-radius: 6px;
   display: grid;
   place-items: center;
@@ -713,6 +714,18 @@ select:disabled {
   object-fit: cover;
 }
 
+.historyThumb small {
+  position: absolute;
+  left: 7px;
+  bottom: 7px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: rgba(23, 33, 27, 0.78);
+  color: #fff8ed;
+  font-size: 10px;
+  font-weight: 950;
+}
+
 .historyTile span,
 .historyTile em {
   display: block;
@@ -723,20 +736,24 @@ select:disabled {
 
 .historyTile strong {
   display: block;
-  margin: 2px 0 3px;
+  margin: 4px 0 5px;
   overflow: hidden;
   color: #17211b;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.32;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .historyTile p {
-  margin: 0 0 5px;
+  margin: 0 0 8px;
   color: #526158;
   font-size: 12px;
-  line-height: 1.35;
+  line-height: 1.42;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 .historyActions {
@@ -1286,6 +1303,7 @@ select:disabled {
 }
 
 .maskEditorPanel {
+  position: relative;
   display: grid;
   gap: 10px;
 }
@@ -1322,6 +1340,17 @@ select:disabled {
 .maskToolGroup button.active {
   background: #17211b;
   color: #fff8ed;
+}
+
+.maskToolGroup .maskGenerateButton {
+  background: var(--studio-text);
+  color: var(--studio-bg);
+  font-weight: 950;
+}
+
+.maskToolGroup .maskGenerateButton:hover {
+  background: var(--studio-primary);
+  color: #fff;
 }
 
 .maskToolGroup button:disabled {
@@ -1629,6 +1658,18 @@ select:disabled {
   color: #fff8ed;
 }
 
+.autoRouteStrip p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #5a675f;
+  font-size: 11px;
+  font-weight: 850;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .deskActions {
   display: flex;
   justify-content: flex-end;
@@ -1712,6 +1753,11 @@ select:disabled {
   color: #ae2431;
 }
 
+.generationProgress.pendingReview > div:first-child,
+.generationProgress.pendingReview strong {
+  color: #9a5a13;
+}
+
 .progressTrack {
   height: 8px;
   overflow: hidden;
@@ -1731,6 +1777,10 @@ select:disabled {
   background: #ae2431;
 }
 
+.generationProgress.pendingReview .progressTrack i {
+  background: linear-gradient(90deg, #c58b25, #b22732);
+}
+
 .generationTimingPanel {
   margin-top: 12px;
   padding: 10px;
@@ -1747,6 +1797,20 @@ select:disabled {
   gap: 7px;
   color: #17211b;
   font-size: 12px;
+}
+
+.generationTimingPanel > div:first-child strong {
+  white-space: nowrap;
+}
+
+.generationTimingPanel > div:first-child span {
+  min-width: 0;
+  overflow: hidden;
+  color: #6a766e;
+  font-size: 10px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .generationTimingPanel dl {
@@ -1993,6 +2057,290 @@ select:disabled {
   max-width: 760px;
   margin: 0 0 8px;
   color: var(--studio-text);
+}
+
+.galleryWorkspacePanel {
+  position: relative;
+  min-height: 100vh;
+  padding: 28px;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle, color-mix(in srgb, var(--studio-muted) 20%, transparent) 1px, transparent 1.5px),
+    linear-gradient(var(--studio-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--studio-grid) 1px, transparent 1px),
+    var(--studio-surface);
+  background-size: 24px 24px, 120px 120px, 120px 120px, auto;
+}
+
+.galleryWorkspacePanel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 32% 16%, color-mix(in srgb, var(--studio-primary) 10%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-strong) 62%, transparent), transparent 42%);
+}
+
+.galleryWorkspacePanel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.galleryWorkspaceHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.galleryWorkspaceHead span {
+  color: var(--studio-primary);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.galleryWorkspaceHead h2 {
+  margin: 6px 0 8px;
+  color: var(--studio-text-strong);
+  font-size: clamp(26px, 3.8vw, 46px);
+  line-height: 1.02;
+}
+
+.galleryWorkspaceHead p {
+  max-width: 620px;
+  margin: 0;
+  color: var(--studio-muted);
+  font-size: 14px;
+}
+
+.galleryWorkspaceActions,
+.galleryWorkspaceToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.galleryKindSwitch {
+  min-height: 38px;
+  padding: 4px;
+  display: inline-flex;
+  gap: 4px;
+  border: 1px solid var(--studio-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 88%, transparent);
+  box-shadow: var(--studio-shadow-soft);
+}
+
+.galleryKindSwitch button,
+.galleryFilterButton {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--studio-muted);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.galleryKindSwitch button.active,
+.galleryFilterButton.active {
+  background: var(--studio-primary);
+  color: #fff;
+}
+
+.galleryWorkspaceToolbar {
+  justify-content: flex-start;
+}
+
+.gallerySearch {
+  width: min(520px, 100%);
+  min-height: 42px;
+  padding: 0 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--studio-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 92%, transparent);
+  color: var(--studio-muted);
+  box-shadow: var(--studio-shadow-soft);
+}
+
+.gallerySearch input {
+  min-width: 0;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--studio-text);
+  outline: none;
+}
+
+.galleryFilterButton {
+  border: 1px solid var(--studio-border);
+  background: color-mix(in srgb, var(--studio-surface-strong) 88%, transparent);
+  box-shadow: var(--studio-shadow-soft);
+}
+
+.inspirationCanvasGrid,
+.historyGalleryGrid {
+  min-height: 0;
+  display: grid;
+  gap: 14px;
+  overflow: auto;
+  padding: 4px 6px 16px 0;
+}
+
+.inspirationCanvasGrid {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  align-content: start;
+}
+
+.historyGalleryGrid {
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  align-content: start;
+}
+
+.inspirationCanvasGrid .categoryTile,
+.inspirationCanvasGrid .caseTile,
+.inspirationCanvasGrid .videoInspirationTile,
+.historyGalleryGrid .historyTile {
+  min-height: 220px;
+  border-color: color-mix(in srgb, var(--studio-border) 86%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 88%, transparent);
+  box-shadow: var(--studio-shadow-soft);
+  overflow: hidden;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.inspirationCanvasGrid .categoryTile:hover,
+.inspirationCanvasGrid .caseTile:hover,
+.inspirationCanvasGrid .videoInspirationTile:hover,
+.historyGalleryGrid .historyTile:hover,
+.historyGalleryGrid .historyTile.selected {
+  border-color: var(--studio-border-strong);
+  box-shadow: 0 22px 54px color-mix(in srgb, var(--studio-primary) 16%, transparent);
+  transform: translateY(-2px);
+}
+
+.inspirationCanvasGrid .categoryTile {
+  grid-template-columns: 1fr;
+  grid-template-rows: 118px auto;
+}
+
+.inspirationCanvasGrid .categoryThumbs,
+.inspirationCanvasGrid .categoryThumbs img {
+  width: 100%;
+  height: 118px;
+  min-height: 118px;
+}
+
+.inspirationCanvasGrid .caseTileMain {
+  min-height: 220px;
+  height: 100%;
+  padding: 10px 10px 44px;
+  grid-template-columns: 1fr;
+  grid-template-rows: 128px auto auto auto;
+  align-items: start;
+}
+
+.inspirationCanvasGrid .caseMedia,
+.inspirationCanvasGrid .caseTile img {
+  width: 100%;
+  height: 128px;
+}
+
+.inspirationCanvasGrid .caseTile span {
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(10, 16, 32, 0.72);
+  color: #fff;
+  font-size: 11px;
+}
+
+.inspirationCanvasGrid .caseTile strong,
+.inspirationCanvasGrid .categoryTile strong,
+.inspirationCanvasGrid .videoInspirationTile strong {
+  color: var(--studio-text-strong);
+}
+
+.inspirationCanvasGrid .caseTileActions {
+  top: auto;
+  right: 10px;
+  bottom: 10px;
+}
+
+.inspirationCanvasGrid .videoInspirationTile {
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: start;
+}
+
+.historyGalleryGrid .historyOpen {
+  min-height: 176px;
+  grid-template-columns: 150px minmax(0, 1fr);
+}
+
+.historyGalleryGrid .historyThumb {
+  width: 150px;
+  height: 150px;
+}
+
+.historyGalleryGrid .historyTile strong {
+  white-space: normal;
+}
+
+.galleryLoadMore {
+  min-height: 220px;
+  border-radius: 10px;
+  border: 1px dashed var(--studio-border-strong);
+  background: color-mix(in srgb, var(--studio-surface-strong) 76%, transparent);
+  color: var(--studio-primary);
+  font-weight: 950;
+}
+
+.galleryLicenseLine {
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--studio-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 88%, transparent);
+  color: var(--studio-muted);
+  font-size: 11px;
+  box-shadow: var(--studio-shadow-soft);
+}
+
+.galleryLicenseLine span,
+.galleryLicenseLine strong {
+  color: var(--studio-text-strong);
+  font-weight: 950;
+}
+
+.galleryLicenseLine p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.galleryLicenseLine a {
+  color: var(--studio-primary);
+  font-weight: 950;
+  text-decoration: none;
 }
 
 .lightboxPanel figcaption {
@@ -2724,6 +3072,12 @@ label span,
   color: var(--studio-on-dark);
 }
 
+.maskToolGroup .maskGenerateButton {
+  border-color: var(--studio-text);
+  background: var(--studio-text);
+  color: var(--studio-bg);
+}
+
 .maskRange {
   color: var(--studio-muted);
 }
@@ -3236,6 +3590,29 @@ label span,
   .deskPanel {
     max-height: none;
   }
+
+  .galleryWorkspacePanel {
+    padding: 18px;
+  }
+
+  .galleryWorkspaceHead {
+    display: grid;
+  }
+
+  .galleryWorkspaceActions,
+  .galleryWorkspaceToolbar {
+    justify-content: flex-start;
+  }
+
+  .historyGalleryGrid,
+  .inspirationCanvasGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .galleryLicenseLine {
+    grid-template-columns: 1fr;
+    border-radius: 10px;
+  }
 }
 
 /* Prompt-first studio layout matched to output/ui-concepts-imagegen/light/light-01-prompt-first.png */
@@ -3482,6 +3859,21 @@ label span,
   text-align: left;
 }
 
+.sideLibraryItem em {
+  margin-left: auto;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--studio-surface-soft);
+  color: var(--studio-primary);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 950;
+}
+
 .sideLibraryItem:hover {
   background: var(--studio-surface-soft);
   color: var(--studio-primary);
@@ -3655,6 +4047,24 @@ label span,
 .caseList,
 .licenseNotice,
 .historyList {
+  display: none;
+}
+
+.templateRail.historyMode .railHead {
+  display: flex;
+}
+
+.templateRail.historyMode .historyList {
+  min-height: 0;
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+  padding: 2px 4px 10px 0;
+}
+
+.templateRail.historyMode .sideRecentBlock,
+.templateRail.historyMode .sideLibraryBlock,
+.templateRail.historyMode .sideLibraryDrawer {
   display: none;
 }
 
@@ -4430,7 +4840,7 @@ label span,
 
 .studioLayout,
 .studioLayout.railCollapsed {
-  grid-template-columns: 122px minmax(0, 1fr);
+  grid-template-columns: 168px minmax(0, 1fr);
 }
 
 .studioLayout.railCollapsed {
@@ -4492,6 +4902,171 @@ label span,
   gap: 8px;
 }
 
+.sideProjectHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sideProjectHead button {
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--studio-border);
+  border-radius: 999px;
+  background: var(--studio-surface-soft);
+  color: var(--studio-primary);
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.sideProjectList {
+  display: grid;
+  gap: 8px;
+}
+
+.sideProjectItem {
+  position: relative;
+  display: block;
+}
+
+.sideProjectOpen {
+  width: 100%;
+  min-height: 86px;
+  padding: 8px 30px 8px 8px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 9px;
+  align-items: stretch;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  background: var(--studio-surface-strong);
+  color: var(--studio-text);
+  text-align: left;
+  box-shadow: var(--studio-shadow-soft);
+}
+
+.sideProjectItem.active .sideProjectOpen,
+.sideProjectOpen:hover {
+  border-color: color-mix(in srgb, var(--studio-primary) 34%, var(--studio-border));
+  background: color-mix(in srgb, var(--studio-primary) 6%, var(--studio-surface-strong));
+}
+
+.sideProjectThumb {
+  position: relative;
+  width: 52px;
+  height: 70px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--studio-border) 78%, transparent);
+  border-radius: 7px;
+  background: var(--studio-surface-hover);
+}
+
+.sideProjectThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sideProjectIndex {
+  position: absolute;
+  left: 5px;
+  bottom: 5px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.68);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 1.1;
+}
+
+.sideProjectText {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+
+.sideProjectTopline {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.sideProjectOpen strong,
+.sideProjectOpen em,
+.sideProjectOpen small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sideProjectOpen strong {
+  color: var(--studio-text-strong);
+  font-size: 11px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.sideProjectOpen b {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-primary) 10%, var(--studio-surface-soft));
+  color: var(--studio-primary);
+  font-size: 9px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.sideProjectOpen em {
+  color: var(--studio-muted);
+  font-size: 10px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.sideProjectOpen small {
+  color: color-mix(in srgb, var(--studio-muted) 86%, var(--studio-text));
+  font-size: 10px;
+  font-weight: 780;
+  line-height: 1.24;
+  display: -webkit-box;
+  white-space: normal;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.sideProjectDelete {
+  position: absolute;
+  top: 8px;
+  right: 7px;
+  width: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--studio-border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--studio-surface-soft) 88%, transparent);
+  color: var(--studio-muted);
+  opacity: 0.68;
+}
+
+.sideProjectItem:hover .sideProjectDelete {
+  opacity: 1;
+}
+
+.sideProjectDelete:hover {
+  color: #b22732;
+  border-color: color-mix(in srgb, #b22732 32%, var(--studio-border));
+}
+
 .sideChatCard {
   min-height: 72px;
   padding: 9px 8px;
@@ -4509,6 +5084,10 @@ label span,
 
 .sideChatCard.active {
   border-color: var(--studio-border-strong);
+}
+
+.emptyProjectCard {
+  width: 100%;
 }
 
 .sideChatIcon {
@@ -4697,13 +5276,136 @@ label span,
   pointer-events: none;
 }
 
-.canvasLinks path {
+.canvasLinkArrow,
+.canvasLinkArrowActive {
+  fill: color-mix(in srgb, var(--studio-primary) 84%, var(--studio-info));
+  stroke: none;
+}
+
+.canvasLinkArrowActive {
+  fill: color-mix(in srgb, var(--studio-primary) 70%, #16f2d4);
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--studio-primary) 48%, transparent));
+}
+
+.canvasLinkGlow,
+.canvasLinkPulse,
+.canvasLinkPath {
   fill: none;
-  stroke: color-mix(in srgb, var(--studio-primary) 52%, var(--studio-border-strong));
-  stroke-width: 2.25;
   stroke-linecap: round;
-  stroke-dasharray: 9 8;
-  opacity: 0.72;
+}
+
+.canvasLinkGlow {
+  stroke: color-mix(in srgb, var(--studio-primary) 72%, var(--studio-info));
+  stroke-width: 7;
+  stroke-dasharray: 10 12;
+  opacity: 0.12;
+}
+
+.canvasLinkPulse {
+  stroke: color-mix(in srgb, var(--studio-primary) 92%, #fff);
+  stroke-width: 3.2;
+  stroke-dasharray: 1.5 24;
+  opacity: 0;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--studio-primary) 42%, transparent));
+  animation: canvasLinkDash 4.8s linear infinite;
+}
+
+.canvasLinkPath {
+  stroke: color-mix(in srgb, var(--studio-primary) 86%, var(--studio-info));
+  stroke-width: 1.8;
+  stroke-dasharray: 10 10;
+  opacity: 0.62;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--studio-primary) 30%, transparent));
+  animation: canvasLinkDash 18s linear infinite;
+}
+
+.canvasLinkJoint {
+  fill: var(--studio-surface-strong);
+  stroke: color-mix(in srgb, var(--studio-primary) 78%, #fff);
+  stroke-width: 1.5;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--studio-primary) 38%, transparent));
+}
+
+.canvasLinkLabel {
+  fill: var(--studio-muted);
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--studio-surface) 78%, transparent);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  opacity: 0.78;
+}
+
+.canvasLinks.hasSelection .canvasLinkGroup.idle .canvasLinkGlow,
+.canvasLinks.hasSelection .canvasLinkGroup.idle .canvasLinkPath,
+.canvasLinks.hasSelection .canvasLinkGroup.idle .canvasLinkJoint,
+.canvasLinks.hasSelection .canvasLinkGroup.idle .canvasLinkJointCore,
+.canvasLinks.hasSelection .canvasLinkGroup.idle .canvasLinkLabel {
+  opacity: 0.14;
+}
+
+.canvasLinkGroup.active .canvasLinkGlow {
+  stroke-width: 9;
+  opacity: 0.34;
+}
+
+.canvasLinkGroup.active .canvasLinkPath {
+  stroke-width: 2.8;
+  stroke-dasharray: 11 8;
+  opacity: 1;
+  filter:
+    drop-shadow(0 0 6px color-mix(in srgb, var(--studio-primary) 48%, transparent))
+    drop-shadow(0 0 13px color-mix(in srgb, var(--studio-info) 24%, transparent));
+  animation-duration: 7s;
+}
+
+.canvasLinkGroup.direct .canvasLinkPath {
+  stroke-width: 3;
+}
+
+.canvasLinkGroup.active .canvasLinkPulse {
+  opacity: 0.48;
+}
+
+.canvasLinkGroup.active .canvasLinkJoint {
+  fill: color-mix(in srgb, var(--studio-primary) 22%, var(--studio-surface-strong));
+  stroke-width: 2;
+  filter:
+    drop-shadow(0 0 6px color-mix(in srgb, var(--studio-primary) 52%, transparent))
+    drop-shadow(0 0 14px color-mix(in srgb, var(--studio-info) 28%, transparent));
+}
+
+.canvasLinkJointCore {
+  fill: color-mix(in srgb, var(--studio-primary) 78%, #fff);
+  opacity: 0.55;
+}
+
+.canvasLinkGroup.active .canvasLinkJointCore {
+  fill: #fff;
+  opacity: 1;
+}
+
+.canvasLinkGroup.branchRoot .canvasLinkPath,
+.canvasLinkGroup.branchDown .canvasLinkPath {
+  stroke: color-mix(in srgb, var(--studio-primary) 72%, #16f2d4);
+}
+
+.canvasLinkGroup.branchUp .canvasLinkPath,
+.canvasLinkGroup.branchIntoSelected .canvasLinkPath {
+  stroke: color-mix(in srgb, var(--studio-info) 64%, var(--studio-primary));
+}
+
+.canvasLinkGroup.active .canvasLinkLabel {
+  fill: var(--studio-text);
+  opacity: 0.94;
+}
+
+@keyframes canvasLinkDash {
+  to {
+    stroke-dashoffset: -152;
+  }
 }
 
 .canvasNode {
@@ -4721,25 +5423,88 @@ label span,
 
 .graphNode {
   position: absolute;
-  width: 260px;
-  height: 220px;
-  min-height: 220px;
+  width: 340px;
+  height: 280px;
+  min-height: 200px;
   padding: 0;
-  cursor: pointer;
   place-items: stretch;
   text-align: left;
+  overflow: visible;
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 
 .graphNode:hover,
-.graphNode.selected {
+.graphNode.selected,
+.graphNode.lineageChild,
+.graphNode.lineageParent {
   border-color: var(--studio-border-strong);
   box-shadow: 0 26px 60px rgba(10, 163, 156, 0.2);
 }
 
 .graphNode.selected {
-  outline: 3px solid color-mix(in srgb, var(--studio-primary) 22%, transparent);
-  outline-offset: 3px;
+  z-index: 4;
+  border-color: color-mix(in srgb, var(--studio-primary) 70%, var(--studio-border));
+  outline: 3px solid color-mix(in srgb, var(--studio-primary) 28%, transparent);
+  outline-offset: 4px;
+  box-shadow:
+    0 0 0 7px color-mix(in srgb, var(--studio-primary) 10%, transparent),
+    0 0 34px color-mix(in srgb, var(--studio-primary) 30%, transparent),
+    0 28px 72px rgba(10, 163, 156, 0.24);
+  transform: translateY(-2px);
+}
+
+.graphNode.lineageChild {
+  z-index: 3;
+  border-color: color-mix(in srgb, var(--studio-primary) 58%, var(--studio-border));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--studio-primary) 22%, transparent),
+    0 0 24px color-mix(in srgb, var(--studio-primary) 22%, transparent),
+    0 24px 58px rgba(10, 163, 156, 0.2);
+}
+
+.graphNode.lineageParent {
+  border-color: color-mix(in srgb, var(--studio-info) 48%, var(--studio-border));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--studio-info) 14%, transparent),
+    0 24px 58px rgba(2, 132, 199, 0.13);
+}
+
+.canvasPort {
+  position: absolute;
+  top: calc(48% - 7px);
+  z-index: 6;
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, var(--studio-primary) 72%, #fff);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 50%, #fff 0 2px, transparent 2.5px),
+    color-mix(in srgb, var(--studio-primary) 82%, var(--studio-surface-strong));
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--studio-primary) 12%, transparent),
+    0 0 18px color-mix(in srgb, var(--studio-primary) 44%, transparent);
+  pointer-events: none;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.canvasPortIn {
+  left: -8px;
+}
+
+.canvasPortOut {
+  right: -8px;
+}
+
+.graphNode:hover .canvasPort,
+.graphNode.selected .canvasPort,
+.graphNode.lineageChild .canvasPort,
+.graphNode.lineageParent .canvasPort,
+.graphNode.editing .canvasPort {
+  border-color: color-mix(in srgb, var(--studio-primary) 84%, #fff);
+  box-shadow:
+    0 0 0 6px color-mix(in srgb, var(--studio-primary) 16%, transparent),
+    0 0 26px color-mix(in srgb, var(--studio-primary) 58%, transparent);
+  transform: scale(1.08);
 }
 
 .canvasNode img,
@@ -4751,10 +5516,51 @@ label span,
   display: block;
 }
 
+.canvasNodeMedia {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  display: grid;
+  place-items: stretch;
+  overflow: hidden;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
 .graphNode img,
 .graphNode video {
   min-height: 0;
   object-fit: cover;
+}
+
+.canvasNodeMissing {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 24px;
+  display: none;
+  place-items: center;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--studio-primary) 12%, transparent), transparent 58%),
+    var(--studio-text-strong);
+  color: var(--studio-on-dark);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.graphNode.imageMissing .canvasNodeMissing {
+  display: grid;
+}
+
+.graphNode.imageMissing .canvasNodeMedia img {
+  opacity: 0;
 }
 
 .canvasNodeLabel {
@@ -4775,34 +5581,246 @@ label span,
   white-space: nowrap;
 }
 
-.canvasNodeAction {
+.graphNode.selected .canvasNodeLabel,
+.graphNode.lineageChild .canvasNodeLabel {
+  border-color: color-mix(in srgb, var(--studio-primary) 42%, var(--studio-border));
+  background: color-mix(in srgb, var(--studio-primary) 14%, var(--studio-surface-strong));
+  color: var(--studio-primary-strong);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--studio-primary) 18%, transparent);
+}
+
+.graphNode.lineageParent .canvasNodeLabel {
+  border-color: color-mix(in srgb, var(--studio-info) 34%, var(--studio-border));
+  background: color-mix(in srgb, var(--studio-info) 10%, var(--studio-surface-strong));
+}
+
+.canvasNodeToolbar {
+  position: absolute;
+  top: 48px;
+  right: 12px;
+  z-index: 3;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--studio-border) 84%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 90%, transparent);
+  color: var(--studio-text);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.13);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 160ms ease, transform 160ms ease, border-color 160ms ease;
+}
+
+.canvasNodeContinue {
   position: absolute;
   top: 12px;
   right: 12px;
-  z-index: 3;
-  max-width: calc(100% - 130px);
-  padding: 6px 9px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--studio-primary) 45%, var(--studio-border));
+  z-index: 4;
+  min-height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, var(--studio-primary) 38%, var(--studio-border));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--studio-primary) 14%, var(--studio-surface-strong));
+  background: color-mix(in srgb, var(--studio-surface-strong) 92%, transparent);
   color: var(--studio-text);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 950;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
   backdrop-filter: blur(14px);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
-.graphNode.selected .canvasNodeAction {
+.canvasNodeContinue:hover,
+.graphNode.selected .canvasNodeContinue,
+.graphNode.editing .canvasNodeContinue {
   background: var(--studio-primary);
   color: #fff;
+  transform: translateY(-1px);
+}
+
+.canvasNodeToolbar button,
+.canvasNodeToolbar a {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--studio-text);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 150ms ease, color 150ms ease, transform 150ms ease;
+}
+
+.canvasNodeToolbar button:hover,
+.canvasNodeToolbar a:hover {
+  background: color-mix(in srgb, var(--studio-primary) 16%, var(--studio-surface-soft));
+  color: var(--studio-primary);
+  transform: translateY(-1px);
+}
+
+.canvasNodeToolbar button:disabled {
+  cursor: not-allowed;
+  color: var(--studio-muted);
+  opacity: 0.44;
+  transform: none;
+}
+
+.graphNode:hover .canvasNodeToolbar,
+.graphNode.selected .canvasNodeToolbar,
+.graphNode.editing .canvasNodeToolbar {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.graphNode.selected .canvasNodeToolbar {
+  border-color: color-mix(in srgb, var(--studio-primary) 38%, var(--studio-border));
+}
+
+.canvasNodeResize {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 6;
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--studio-primary) 38%, var(--studio-border));
+  border-radius: 7px;
+  background:
+    linear-gradient(135deg, transparent 0 45%, color-mix(in srgb, var(--studio-primary) 55%, transparent) 46% 54%, transparent 55%),
+    linear-gradient(135deg, transparent 0 64%, color-mix(in srgb, var(--studio-primary) 68%, transparent) 65% 73%, transparent 74%),
+    color-mix(in srgb, var(--studio-surface-strong) 90%, transparent);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.13);
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 160ms ease, transform 160ms ease, border-color 160ms ease;
+}
+
+.graphNode:hover .canvasNodeResize,
+.graphNode.selected .canvasNodeResize,
+.graphNode.editing .canvasNodeResize {
+  opacity: 1;
+}
+
+.canvasNodeResize:hover {
+  border-color: var(--studio-primary);
+  transform: translate(-1px, -1px);
+}
+
+.canvasInlineEditor {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 5;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--studio-border-strong) 72%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 94%, transparent);
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.canvasInlineEditorHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.canvasInlineEditorHead strong {
+  color: var(--studio-text);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.canvasInlineEditorHead button,
+.canvasInlineModes button,
+.canvasInlineGenerate {
+  min-height: 28px;
+  border-radius: 7px;
+}
+
+.canvasInlineEditorHead button {
+  width: 28px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--studio-surface-soft);
+  color: var(--studio-text);
+}
+
+.canvasInlineEditor textarea {
+  width: 100%;
+  min-height: 58px;
+  max-height: 96px;
+  padding: 8px;
+  resize: vertical;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.canvasInlineModes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.canvasInlineModes button {
+  padding: 0 8px;
+  background: var(--studio-surface-soft);
+  color: var(--studio-muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.canvasInlineModes button.active {
+  background: var(--studio-primary);
+  color: #fff;
+}
+
+.canvasInlineEditor p {
+  margin: 0;
+  color: var(--studio-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.canvasInlineGenerate {
+  width: 100%;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--studio-text);
+  color: var(--studio-bg);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.graphNode.editing small {
+  display: none;
 }
 
 .graphNode small {
   position: absolute;
   left: 10px;
-  right: 10px;
+  right: 38px;
   bottom: 10px;
   z-index: 2;
   min-height: 26px;
@@ -4969,6 +5987,46 @@ label span,
   font-size: 12px;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.canvasNextHint {
+  position: absolute;
+  left: calc(100% + 28px);
+  top: 50%;
+  z-index: 3;
+  width: 186px;
+  padding: 12px;
+  display: grid;
+  gap: 4px;
+  border: 1px dashed color-mix(in srgb, var(--studio-primary) 56%, var(--studio-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 90%, transparent);
+  color: var(--studio-text);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.12);
+  transform: translateY(-50%);
+  backdrop-filter: blur(16px);
+}
+
+.canvasNextHint::before {
+  content: "";
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: 28px;
+  border-top: 2px dashed color-mix(in srgb, var(--studio-primary) 72%, var(--studio-info));
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--studio-primary) 58%, transparent));
+}
+
+.canvasNextHint strong {
+  color: var(--studio-primary);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.canvasNextHint span {
+  color: var(--studio-muted);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .composerQuotaHint {
@@ -5350,6 +6408,106 @@ label span,
   white-space: nowrap;
 }
 
+.composerInspirationDock {
+  position: relative;
+  display: grid;
+  justify-items: center;
+}
+
+.composerInspirationToggle {
+  min-height: 30px;
+  padding: 0 9px;
+  gap: 5px;
+  border: 1px solid var(--studio-border);
+  border-radius: 999px;
+  background: var(--studio-surface-soft);
+  color: var(--studio-primary);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.composerInspirationDock.isOpen .composerInspirationToggle {
+  border-color: color-mix(in srgb, var(--studio-primary) 34%, var(--studio-border));
+  background: color-mix(in srgb, var(--studio-primary) 12%, var(--studio-surface-soft));
+}
+
+.composerInspirationPanel {
+  position: absolute;
+  right: -48px;
+  bottom: calc(100% + 10px);
+  z-index: 12;
+  width: min(360px, calc(100vw - 320px));
+  padding: 10px;
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--studio-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 94%, transparent);
+  box-shadow: 0 22px 58px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.composerInspirationHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.composerInspirationHead strong {
+  color: var(--studio-text-strong);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.composerInspirationHead button {
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--studio-border);
+  border-radius: 999px;
+  background: var(--studio-surface-soft);
+  color: var(--studio-primary);
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.composerRecipeList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.composerRecipeList button {
+  min-height: 54px;
+  padding: 8px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  background: var(--studio-surface-soft);
+  color: var(--studio-text);
+  text-align: left;
+}
+
+.composerRecipeList strong,
+.composerRecipeList span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerRecipeList strong {
+  color: var(--studio-text-strong);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.composerRecipeList span {
+  color: var(--studio-muted);
+  font-size: 10px;
+}
+
 .composerLineageHint {
   max-width: 136px;
   display: flex;
@@ -5521,6 +6679,15 @@ label span,
 
   .creationDesk .bottomComposerBar {
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .composerInspirationPanel {
+    right: -48px;
+    width: min(320px, calc(100vw - 36px));
+  }
+
+  .composerRecipeList {
+    grid-template-columns: 1fr;
   }
 
   .composerQuotaHint {
@@ -5871,7 +7038,7 @@ label span,
 }
 
 .templateRail:not(.collapsed) .sideBrand strong {
-  max-width: 48px;
+  max-width: 100%;
   display: block;
   overflow: hidden;
   color: var(--studio-text-strong);
@@ -6097,27 +7264,28 @@ label span,
 
 /* Icon-only assistant submit: keep the composer row visually locked to one baseline. */
 .creationDesk .bottomComposerBar {
-  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  grid-template-columns: 40px minmax(0, 1fr) 64px 40px;
   align-items: center;
   gap: 9px;
 }
 
 .creationDesk .bottomComposerBar.hasLineage {
-  grid-template-columns: 40px minmax(0, 1fr) minmax(90px, 126px) 40px;
+  grid-template-columns: 40px minmax(0, 1fr) minmax(90px, 126px) 64px 40px;
 }
 
 .creationDesk .bottomComposerBar.hasThread {
-  grid-template-columns: 40px minmax(0, 1fr) minmax(132px, 188px) 40px;
+  grid-template-columns: 40px minmax(0, 1fr) minmax(132px, 188px) 64px 40px;
 }
 
 .creationDesk .bottomComposerBar.hasThread.hasLineage {
-  grid-template-columns: 40px minmax(0, 1fr) minmax(116px, 170px) minmax(90px, 126px) 40px;
+  grid-template-columns: 40px minmax(0, 1fr) minmax(116px, 170px) minmax(90px, 126px) 64px 40px;
 }
 
 .creationDesk .bottomComposerToggle,
 .creationDesk .bottomComposerInput,
 .creationDesk .composerThread,
 .creationDesk .composerAssistGroup,
+.creationDesk .composerInspirationDock,
 .creationDesk .composerPrimaryAction {
   align-self: center;
 }
@@ -6165,6 +7333,10 @@ label span,
 
 .creationDesk:not(.composerOpen) .bottomComposerBar {
   grid-template-columns: 36px minmax(0, 1fr) 38px;
+}
+
+.creationDesk:not(.composerOpen) .composerInspirationDock {
+  display: none;
 }
 
 .creationDesk:not(.composerOpen) .composerPrimaryAction {
@@ -6271,30 +7443,54 @@ label span,
 
 /* Right parameter rail can fully collapse so the canvas regains the edge space. */
 .creationDesk.paramRailCollapsed {
-  grid-template-columns: minmax(0, 1fr) 34px;
-  transition: grid-template-columns 190ms ease;
+  grid-template-columns: minmax(0, 1fr) 54px;
+  transition: grid-template-columns 260ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .creationDesk.paramRailCollapsed .workPreview.infiniteCanvas {
-  right: 0;
-  transition: right 190ms ease, transform 90ms ease-out;
+  right: 2px;
+  transition: right 260ms cubic-bezier(0.22, 1, 0.36, 1), transform 120ms ease-out;
 }
 
 .creationDesk.paramRailCollapsed .canvasToolbar {
-  right: 52px;
-  transition: right 190ms ease, transform 170ms ease, box-shadow 170ms ease;
+  right: 72px;
+  transition: right 260ms cubic-bezier(0.22, 1, 0.36, 1), transform 180ms ease, box-shadow 180ms ease;
 }
 
 .creationDesk.paramRailCollapsed .paramRail {
-  width: 34px;
+  position: relative;
+  width: 46px;
+  min-height: 118px;
   margin-top: 48px;
-  margin-right: 4px;
-  padding: 4px;
+  margin-right: 8px;
+  padding: 7px 4px;
   gap: 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--studio-surface-strong) 86%, transparent);
-  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.14);
-  transition: width 190ms ease, margin 190ms ease, padding 190ms ease, border-radius 190ms ease, box-shadow 190ms ease, background 190ms ease;
+  border-color: color-mix(in srgb, var(--studio-primary) 34%, var(--studio-border));
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-strong) 96%, transparent), color-mix(in srgb, var(--studio-surface-soft) 88%, transparent));
+  box-shadow:
+    0 18px 42px rgba(15, 23, 42, 0.18),
+    0 0 0 5px color-mix(in srgb, var(--studio-primary) 7%, transparent);
+  transition:
+    width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    min-height 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms ease,
+    background 220ms ease;
+}
+
+.creationDesk.paramRailCollapsed .paramRail::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  z-index: -1;
+  border-radius: 28px;
+  background: radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--studio-primary) 22%, transparent), transparent 64%);
+  opacity: 0.82;
+  pointer-events: none;
 }
 
 .creationDesk.paramRailCollapsed .paramRail button:not(.paramRailHead),
@@ -6303,17 +7499,933 @@ label span,
 }
 
 .creationDesk.paramRailCollapsed .paramRailHead {
-  width: 26px;
-  min-width: 26px;
-  min-height: 26px !important;
-  height: 26px;
-  padding: 0;
-  border-radius: 999px;
-  font-size: 0 !important;
-  color: var(--studio-primary) !important;
+  width: 38px;
+  min-width: 38px;
+  min-height: 104px !important;
+  height: 104px;
+  padding: 8px 0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--studio-text-strong) !important;
+  font-size: 12px !important;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0;
+  box-shadow: none;
+  text-orientation: upright;
+  writing-mode: vertical-rl;
 }
 
 .creationDesk.paramRailCollapsed .paramRailHead span {
-  font-size: 15px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--studio-primary);
+  color: #fff;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--studio-primary) 30%, transparent);
+  font-size: 16px;
   line-height: 1;
+  writing-mode: horizontal-tb;
+}
+
+.creationDesk.paramRailCollapsed .paramRail:hover {
+  transform: translateX(-2px);
+  box-shadow:
+    0 22px 52px rgba(15, 23, 42, 0.22),
+    0 0 0 6px color-mix(in srgb, var(--studio-primary) 11%, transparent);
+}
+
+/* Motion polish: one soft movement language for the studio shell. */
+.studioLayout,
+.templateRail,
+.creationDesk,
+.paramRail,
+.paramDrawer,
+.canvasToolbar,
+.referenceBox,
+.referenceCollapsedBlock,
+.bottomComposerToggle,
+.creationDesk .bottomComposerBar,
+.composerInspirationPanel,
+.composerThread,
+.graphNode,
+.canvasNodeToolbar,
+.canvasInlineEditor,
+.sideProjectItem,
+.sideProjectOpen,
+.railAccountCard {
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.templateRail {
+  transition:
+    width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.templateRail.collapsed {
+  box-shadow:
+    0 16px 36px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 color-mix(in srgb, #fff 42%, transparent);
+}
+
+.templateRail.collapsed .railIconAction,
+.templateRail.collapsed .railAvatarButton {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.templateRail.collapsed .railIconAction:hover,
+.templateRail.collapsed .railAvatarButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+}
+
+.creationDesk .bottomComposerBar {
+  transition:
+    grid-template-columns 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    min-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.creationDesk.composerOpen .bottomComposerBar {
+  animation: studioSoftRise 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.composerInspirationPanel,
+.paramDrawer,
+.canvasInlineEditor {
+  animation: studioPopoverIn 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: 85% 100%;
+}
+
+.paramDrawer {
+  transform-origin: 100% 24px;
+}
+
+.graphNode:hover,
+.sideProjectOpen:hover {
+  transform: translateY(-2px);
+}
+
+.graphNode,
+.sideProjectOpen,
+.composerInspirationToggle,
+.paramRail button,
+.paramDrawerGenerate,
+.bottomComposerToggle,
+.referenceCollapsedBlock {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+@keyframes studioSoftRise {
+  from {
+    opacity: 0.72;
+    transform: translateY(8px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes studioPopoverIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studioLayout,
+  .templateRail,
+  .creationDesk,
+  .paramRail,
+  .paramDrawer,
+  .canvasToolbar,
+  .referenceBox,
+  .referenceCollapsedBlock,
+  .bottomComposerToggle,
+  .creationDesk .bottomComposerBar,
+  .composerInspirationPanel,
+  .composerThread,
+  .graphNode,
+  .canvasNodeToolbar,
+  .canvasInlineEditor,
+  .sideProjectItem,
+  .sideProjectOpen,
+  .railAccountCard,
+  .templateRail.collapsed .railIconAction,
+  .templateRail.collapsed .railAvatarButton {
+    animation: none !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* Conversation-first composer: expanded state becomes a real bottom workspace. */
+.creationDesk.composerOpen {
+  grid-template-rows: minmax(360px, 1fr) clamp(238px, 31vh, 328px);
+}
+
+.creationDesk.composerOpen .workPreview.infiniteCanvas {
+  bottom: 0;
+}
+
+.creationDesk .bottomComposerBar {
+  grid-column: 1;
+  grid-row: 2;
+  width: auto;
+  min-width: 0;
+  margin: 0 0 0 12px;
+  border-radius: 14px;
+}
+
+.creationDesk.composerOpen .bottomComposerBar {
+  height: 100%;
+  min-height: 238px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 38px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-self: stretch;
+  align-items: stretch;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-strong) 94%, transparent), color-mix(in srgb, var(--studio-surface) 92%, transparent));
+  box-shadow:
+    0 -18px 54px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 color-mix(in srgb, #fff 34%, transparent);
+  overflow: hidden;
+}
+
+.composerPanelHead {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.composerPanelTitle {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.composerPanelTitle strong {
+  overflow: hidden;
+  color: var(--studio-text-strong);
+  font-size: 13px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerPanelTitle span {
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: var(--studio-muted);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.composerNewRootAction {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--studio-border);
+  border-radius: 999px;
+  background: var(--studio-surface-soft);
+  color: var(--studio-primary);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.creationDesk.composerOpen .composerThread {
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  min-width: 0;
+  padding: 10px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--studio-border) 78%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--studio-surface-soft) 62%, transparent);
+}
+
+.composerEmptyThread {
+  min-height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  color: var(--studio-muted);
+  text-align: center;
+}
+
+.composerEmptyThread strong {
+  color: var(--studio-text-strong);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.creationDesk.composerOpen .composerMessage {
+  width: min(760px, 100%);
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--studio-border) 82%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 82%, transparent);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+}
+
+.creationDesk.composerOpen .composerMessage.user {
+  justify-self: end;
+  background: color-mix(in srgb, var(--studio-primary) 10%, var(--studio-surface-strong));
+}
+
+.creationDesk.composerOpen .composerMessage p {
+  max-height: none;
+  color: var(--studio-text);
+}
+
+.composerPromptRow {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.creationDesk.composerOpen .bottomComposerInput textarea {
+  min-height: 74px;
+  height: 74px;
+  max-height: 120px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  resize: vertical;
+}
+
+.composerActionGroup {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.composerAssistantAction,
+.composerGenerateAction {
+  min-height: 42px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.composerAssistantAction {
+  border: 1px solid color-mix(in srgb, var(--studio-primary) 25%, var(--studio-border));
+  background: color-mix(in srgb, var(--studio-primary) 9%, var(--studio-surface-soft));
+  color: var(--studio-primary);
+}
+
+.composerGenerateAction {
+  border: 1px solid color-mix(in srgb, var(--studio-primary) 42%, transparent);
+  background: linear-gradient(135deg, var(--studio-primary), var(--studio-accent)) !important;
+  color: #fff !important;
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--studio-primary) 22%, transparent);
+}
+
+.primaryAction.isStopAction,
+.composerGenerateAction.isStopAction,
+.paramGenerateAction.isStopAction,
+.paramDrawerGenerate.isStopAction {
+  border-color: color-mix(in srgb, #b22732 44%, var(--studio-border)) !important;
+  background: linear-gradient(135deg, #b22732, #e06c58) !important;
+  color: #fff !important;
+  box-shadow: 0 14px 30px color-mix(in srgb, #b22732 22%, transparent);
+}
+
+.primaryAction.isRetryAction,
+.composerGenerateAction.isRetryAction,
+.paramGenerateAction.isRetryAction,
+.paramDrawerGenerate.isRetryAction {
+  border-color: color-mix(in srgb, #b7791f 44%, var(--studio-border)) !important;
+  background: linear-gradient(135deg, #b7791f, #d98d28) !important;
+  color: #fff !important;
+  box-shadow: 0 14px 30px color-mix(in srgb, #b7791f 18%, transparent);
+}
+
+.composerAssistantAction:disabled,
+.composerGenerateAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.creationDesk:not(.composerOpen) {
+  grid-template-rows: minmax(460px, 1fr) 54px;
+}
+
+.creationDesk:not(.composerOpen) .bottomComposerBar {
+  height: 48px;
+  min-height: 48px;
+  padding: 6px 8px;
+  display: grid !important;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.creationDesk:not(.composerOpen) .composerPanelHead {
+  display: grid;
+  place-items: center;
+}
+
+.creationDesk:not(.composerOpen) .composerPanelTitle,
+.creationDesk:not(.composerOpen) .composerNewRootAction,
+.creationDesk:not(.composerOpen) .composerInspirationDock,
+.creationDesk:not(.composerOpen) .composerThread {
+  display: none !important;
+}
+
+.creationDesk:not(.composerOpen) .composerPromptRow {
+  display: contents;
+}
+
+.creationDesk:not(.composerOpen) .bottomComposerInput textarea {
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px;
+  padding: 7px 12px;
+  resize: none;
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.creationDesk:not(.composerOpen) .composerActionGroup {
+  display: grid;
+}
+
+.creationDesk:not(.composerOpen) .composerAssistantAction {
+  display: none;
+}
+
+.creationDesk:not(.composerOpen) .composerGenerateAction {
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 !important;
+  font-size: 0;
+}
+
+.creationDesk:not(.composerOpen) .composerGenerateAction span {
+  display: none;
+}
+
+.creationDesk.paramRailCollapsed {
+  grid-template-columns: minmax(0, 1fr) 52px;
+}
+
+.creationDesk.paramRailCollapsed .canvasToolbar {
+  right: 70px;
+}
+
+.creationDesk.paramRailCollapsed .paramRail {
+  width: 44px;
+  min-height: 74px;
+  margin-right: 8px;
+  padding: 5px;
+  border-radius: 999px;
+}
+
+.creationDesk.paramRailCollapsed .paramRailHead {
+  width: 34px;
+  min-width: 34px;
+  min-height: 64px !important;
+  height: 64px;
+  padding: 0;
+  display: grid !important;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--studio-primary);
+  color: #fff !important;
+  font-size: 0 !important;
+  writing-mode: horizontal-tb;
+  box-shadow:
+    0 12px 26px color-mix(in srgb, var(--studio-primary) 28%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.creationDesk.paramRailCollapsed .paramRailHead svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.4;
+}
+
+.creationDesk.paramRailCollapsed .paramRailHead span {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .creationDesk.composerOpen {
+    grid-template-rows: minmax(300px, 1fr) minmax(260px, 38vh);
+  }
+
+  .composerPromptRow {
+    grid-template-columns: 1fr;
+  }
+
+  .composerActionGroup {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Composer polish pass: make the bottom workspace feel like a real session pane. */
+.creationDesk.composerOpen .bottomComposerBar {
+  grid-template-rows: 38px minmax(0, 1fr) 76px;
+  gap: 9px;
+  border-color: color-mix(in srgb, var(--studio-border-strong) 24%, var(--studio-border));
+  animation: studioComposerExpand 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.creationDesk.composerOpen .composerPanelHead {
+  min-height: 38px;
+  padding: 0 2px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--studio-border) 72%, transparent);
+}
+
+.creationDesk.composerOpen .composerPanelTitle {
+  flex: 1 1 auto;
+}
+
+.creationDesk.composerOpen .composerPanelTitle strong {
+  font-size: 14px;
+}
+
+.creationDesk.composerOpen .composerPanelTitle span {
+  font-size: 11px;
+}
+
+.creationDesk.composerOpen .composerInspirationDock {
+  margin-left: auto;
+}
+
+.creationDesk.composerOpen .bottomComposerToggle {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  align-self: center;
+  border-radius: 999px;
+  background: var(--studio-surface-soft);
+}
+
+.creationDesk.composerOpen .composerThread {
+  align-self: stretch;
+  height: 100%;
+  max-height: none;
+  padding: 12px;
+  gap: 9px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-soft) 70%, transparent), color-mix(in srgb, var(--studio-surface-soft) 44%, transparent));
+}
+
+.composerEmptyThread {
+  min-height: 100%;
+  opacity: 0.86;
+}
+
+.creationDesk.composerOpen .composerMessage {
+  animation: studioMessageIn 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.creationDesk.composerOpen .composerPromptRow {
+  align-items: stretch;
+}
+
+.creationDesk.composerOpen .bottomComposerInput textarea {
+  height: 76px;
+  min-height: 66px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 26%, transparent);
+}
+
+.creationDesk.composerOpen .composerActionGroup {
+  align-self: stretch;
+  grid-template-columns: 80px 80px;
+  align-content: end;
+}
+
+.creationDesk.composerOpen .composerAssistantAction,
+.creationDesk.composerOpen .composerGenerateAction {
+  width: 80px;
+  min-width: 80px;
+  height: 38px;
+  padding: 0 10px;
+  transition:
+    transform 170ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 170ms ease,
+    filter 170ms ease,
+    background 170ms ease,
+    border-color 170ms ease;
+}
+
+.creationDesk.composerOpen .composerAssistantAction:hover:not(:disabled),
+.creationDesk.composerOpen .composerGenerateAction:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.creationDesk.composerOpen .composerAssistantAction:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--studio-primary) 38%, var(--studio-border));
+  background: color-mix(in srgb, var(--studio-primary) 14%, var(--studio-surface-soft));
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--studio-primary) 12%, transparent);
+}
+
+.creationDesk.composerOpen .composerGenerateAction:hover:not(:disabled) {
+  filter: saturate(1.08) brightness(1.04);
+  box-shadow: 0 18px 36px color-mix(in srgb, var(--studio-primary) 28%, transparent);
+}
+
+.creationDesk:not(.composerOpen) .bottomComposerBar {
+  border-radius: 999px;
+  box-shadow:
+    0 12px 32px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 color-mix(in srgb, #fff 32%, transparent);
+}
+
+.creationDesk:not(.composerOpen) .composerPanelHead {
+  width: 34px;
+}
+
+.creationDesk:not(.composerOpen) .bottomComposerToggle {
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  border-radius: 999px;
+}
+
+.creationDesk:not(.composerOpen) .composerGenerateAction {
+  border-radius: 999px;
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--studio-primary) 20%, transparent);
+}
+
+.creationDesk.paramRailCollapsed .paramRail {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-strong) 94%, transparent), color-mix(in srgb, var(--studio-surface-soft) 88%, transparent));
+}
+
+.creationDesk.paramRailCollapsed .paramRailHead {
+  transition:
+    transform 170ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 170ms ease,
+    filter 170ms ease;
+}
+
+.creationDesk.paramRailCollapsed .paramRailHead:hover {
+  filter: saturate(1.08) brightness(1.04);
+  transform: translateY(-1px);
+  box-shadow:
+    0 16px 34px color-mix(in srgb, var(--studio-primary) 32%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.48);
+}
+
+@keyframes studioComposerExpand {
+  from {
+    opacity: 0.72;
+    transform: translateY(14px) scale(0.988);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes studioMessageIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Final layout lock: keep the session composer anchored while messages update. */
+.creationDesk.composerOpen {
+  grid-template-rows: minmax(360px, 1fr) clamp(238px, 31vh, 328px);
+}
+
+.creationDesk.composerOpen .bottomComposerBar {
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 238px;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 38px minmax(0, 1fr) 76px;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.creationDesk.composerOpen .composerPanelHead {
+  grid-row: 1;
+}
+
+.creationDesk.composerOpen .composerThread {
+  grid-row: 2;
+  min-height: 0;
+  overflow: auto;
+}
+
+.creationDesk.composerOpen .composerPromptRow {
+  grid-row: 3;
+  min-height: 76px;
+  align-self: end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 168px;
+  align-items: stretch;
+}
+
+.creationDesk.composerOpen .bottomComposerInput,
+.creationDesk.composerOpen .bottomComposerInput textarea {
+  height: 100%;
+}
+
+.creationDesk.composerOpen .bottomComposerInput textarea {
+  min-height: 66px;
+  max-height: 76px;
+  resize: none;
+}
+
+.creationDesk.composerOpen .composerActionGroup {
+  height: 100%;
+  align-self: stretch;
+  align-content: end;
+  grid-template-columns: 80px 80px;
+}
+
+/* Canvas-first lock: legacy workbench blocks must not push the canvas composer. */
+.creationDesk .deskPanel {
+  position: absolute !important;
+  inset: 14px auto auto 14px !important;
+  z-index: 7;
+  width: min(360px, calc(100% - 120px));
+  max-width: min(360px, calc(100% - 120px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  pointer-events: none;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.creationDesk .deskPanel > :not(.referenceBox):not(.referenceCollapsedBlock):not(.maskReferenceBox):not(.promptSuggestion):not(.generationProgress):not(.statusLine) {
+  display: none !important;
+}
+
+.creationDesk .referenceBox,
+.creationDesk .referenceCollapsedBlock,
+.creationDesk .promptSuggestion,
+.creationDesk .generationProgress,
+.creationDesk .statusLine {
+  pointer-events: auto;
+}
+
+.creationDesk .referenceBox {
+  width: min(360px, calc(100vw - 240px));
+}
+
+.creationDesk .resultStage {
+  display: none !important;
+}
+
+.creationDesk .bottomComposerBar {
+  position: relative;
+  z-index: 5;
+}
+
+/* Final rail lock: the project cards need room, later canvas rules must not shrink them. */
+.studioLayout,
+.studioLayout.railCollapsed {
+  grid-template-columns: 168px minmax(0, 1fr);
+}
+
+.studioLayout.railCollapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.templateRail:not(.collapsed) {
+  width: 168px;
+  min-width: 168px;
+}
+
+/* Expanded composer hard lock: lineage/thread states must not revive legacy multi-column rows. */
+.creationDesk.composerOpen .bottomComposerBar,
+.creationDesk.composerOpen .bottomComposerBar.hasLineage,
+.creationDesk.composerOpen .bottomComposerBar.hasThread,
+.creationDesk.composerOpen .bottomComposerBar.hasThread.hasLineage {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: 38px minmax(0, 1fr) 76px !important;
+}
+
+.creationDesk.composerOpen .composerPanelHead,
+.creationDesk.composerOpen .composerThread,
+.creationDesk.composerOpen .composerPromptRow {
+  grid-column: 1 / -1 !important;
+  width: 100%;
+  min-width: 0;
+  justify-self: stretch;
+}
+
+.creationDesk.composerOpen .composerThread {
+  max-width: none !important;
+  padding: 12px 14px !important;
+  display: flex !important;
+  flex-direction: column;
+  gap: 10px;
+  border-color: color-mix(in srgb, var(--studio-border) 58%, transparent) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-soft) 62%, transparent), color-mix(in srgb, var(--studio-surface-strong) 72%, transparent)) !important;
+}
+
+.creationDesk.composerOpen .composerPromptRow {
+  grid-template-columns: minmax(0, 1fr) 132px !important;
+}
+
+.creationDesk.composerOpen .bottomComposerInput {
+  grid-column: 1;
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.creationDesk.composerOpen .bottomComposerInput textarea {
+  display: block;
+  width: 100%;
+}
+
+.creationDesk.composerOpen .composerActionGroup {
+  grid-column: 2;
+  width: 132px;
+  grid-template-columns: 38px 86px !important;
+  gap: 8px;
+}
+
+.creationDesk.composerOpen .composerAssistantAction {
+  width: 38px !important;
+  min-width: 38px !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+}
+
+.creationDesk.composerOpen .composerAssistantAction span {
+  display: none !important;
+}
+
+.creationDesk.composerOpen .composerGenerateAction {
+  width: 86px !important;
+  min-width: 86px !important;
+}
+
+.creationDesk.composerOpen .composerMessage {
+  width: fit-content !important;
+  max-width: min(78%, 720px);
+  padding: 9px 11px !important;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  align-self: flex-start;
+  border-radius: 14px !important;
+  border-color: color-mix(in srgb, var(--studio-border) 62%, transparent) !important;
+  background: color-mix(in srgb, var(--studio-surface-strong) 88%, transparent) !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.07) !important;
+  animation: studioMessageIn 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.creationDesk.composerOpen .composerMessage.user {
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-self: flex-end;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--studio-primary) 18%, var(--studio-surface-strong)), color-mix(in srgb, var(--studio-primary) 8%, var(--studio-surface-strong))) !important;
+}
+
+.creationDesk.composerOpen .composerMessage.user span {
+  grid-column: 2;
+  grid-row: 1;
+  background: color-mix(in srgb, var(--studio-primary) 22%, var(--studio-surface-soft));
+  color: var(--studio-primary);
+}
+
+.creationDesk.composerOpen .composerMessage.user p {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.creationDesk.composerOpen .composerMessage span {
+  width: 24px;
+  min-height: 24px;
+  font-size: 10px;
+}
+
+.creationDesk.composerOpen .composerMessage p {
+  max-height: none !important;
+  margin: 0;
+  color: var(--studio-text);
+  font-size: 12px;
+  line-height: 1.58;
+  white-space: pre-wrap;
+}
+
+.creationDesk.composerOpen .composerMessage button {
+  grid-column: 2;
+  min-height: 24px;
+  margin-top: 2px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 10px;
+}
+
+.creationDesk.composerOpen .composerMessage.user button {
+  grid-column: 1;
+  justify-self: end;
+}
+
+.creationDesk.composerOpen .composerEmptyThread {
+  width: 100%;
+  min-height: 100%;
+  border: 1px dashed color-mix(in srgb, var(--studio-border) 72%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--studio-surface-soft) 40%, transparent);
 }

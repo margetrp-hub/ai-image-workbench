@@ -13,6 +13,9 @@ const LIBRARY_DIR = path.resolve(process.env.STUDIO_LIBRARY_DIR || path.join(__d
 const LIBRARY_ASSET_DIR = path.resolve(process.env.STUDIO_LIBRARY_ASSET_DIR || path.join(LIBRARY_DIR, 'images'));
 const SUB2API_BASE_URL = String(process.env.SUB2API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
 const HISTORY_LIMIT = Number(process.env.STUDIO_HISTORY_LIMIT || 200);
+const SESSION_NODE_LIMIT = Number(process.env.STUDIO_SESSION_NODE_LIMIT || 80);
+const SESSION_URL_LIMIT = Number(process.env.STUDIO_SESSION_URL_LIMIT || 24);
+const SESSION_ASSET_ID = 'session-current';
 const MAX_BODY_BYTES = Number(process.env.STUDIO_MAX_BODY_BYTES || 96 * 1024 * 1024);
 const MAX_IMAGE_BYTES = Number(process.env.STUDIO_MAX_IMAGE_BYTES || 32 * 1024 * 1024);
 const ALLOWED_ORIGINS = String(process.env.STUDIO_ALLOWED_ORIGINS || 'http://127.0.0.1:5173,http://localhost:5173')
@@ -333,6 +336,10 @@ function recordsPath(auth) {
   return path.join(auth.userDir, 'records.json');
 }
 
+function sessionPath(auth) {
+  return path.join(auth.userDir, 'session.json');
+}
+
 async function readRecords(auth) {
   try {
     const raw = await fs.readFile(recordsPath(auth), 'utf8');
@@ -347,6 +354,22 @@ async function readRecords(auth) {
 async function writeRecords(auth, records) {
   await ensureUserDirs(auth);
   await fs.writeFile(recordsPath(auth), JSON.stringify(records.slice(0, HISTORY_LIMIT), null, 2));
+}
+
+async function readSession(auth) {
+  try {
+    const raw = await fs.readFile(sessionPath(auth), 'utf8');
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+async function writeSession(auth, session) {
+  await ensureUserDirs(auth);
+  await fs.writeFile(sessionPath(auth), JSON.stringify(session, null, 2));
 }
 
 function text(value, length) {
@@ -391,6 +414,10 @@ async function storeResultUrl(auth, recordId, value, index) {
   const fileName = `${index}.${ext}`;
   await fs.writeFile(path.join(assetDir, fileName), buffer);
   return `/studio-api/history/${recordId}/assets/${fileName}`;
+}
+
+async function storeSessionUrl(auth, value, index) {
+  return storeResultUrl(auth, SESSION_ASSET_ID, value, index);
 }
 
 async function readJsonFile(filePath, fallback = {}) {
@@ -521,6 +548,121 @@ function sanitizeCase(value) {
   };
 }
 
+function sanitizeSessionObject(value) {
+  if (!value || typeof value !== 'object') return null;
+  return { ...value };
+}
+
+function sanitizeCanvasView(value) {
+  if (!value || typeof value !== 'object') return { x: 0, y: 0, zoom: 1 };
+  const x = Number(value.x);
+  const y = Number(value.y);
+  const zoom = Number(value.zoom);
+  return {
+    x: Number.isFinite(x) ? Math.max(-8000, Math.min(8000, x)) : 0,
+    y: Number.isFinite(y) ? Math.max(-8000, Math.min(8000, y)) : 0,
+    zoom: Number.isFinite(zoom) ? Math.max(0.2, Math.min(3, zoom)) : 1
+  };
+}
+
+function sanitizeDownloadMeta(value) {
+  if (!value || typeof value !== 'object') return null;
+  return {
+    mode: text(value.mode || 'image', 40),
+    providerId: text(value.providerId, 160),
+    createdAt: value.createdAt && !Number.isNaN(Date.parse(value.createdAt)) ? value.createdAt : '',
+    prompt: text(value.prompt, 6000),
+    id: text(value.id, 160)
+  };
+}
+
+async function sanitizeSessionUrls(auth, values, assetIndex) {
+  const urls = [];
+  const source = Array.isArray(values) ? values.slice(0, SESSION_URL_LIMIT) : [];
+  for (const value of source) {
+    const stored = await storeSessionUrl(auth, value, assetIndex.current);
+    assetIndex.current += 1;
+    if (stored) urls.push(stored);
+    else if (/^(https?:|blob:)/i.test(String(value || ''))) urls.push(String(value));
+  }
+  return urls;
+}
+
+async function sanitizeCanvasNodes(auth, nodes, assetIndex) {
+  const source = Array.isArray(nodes) ? nodes.slice(0, SESSION_NODE_LIMIT) : [];
+  const result = [];
+  for (const node of source) {
+    if (!node || typeof node !== 'object') continue;
+    const rawUrl = String(node.url || '');
+    let url = '';
+    if (rawUrl) {
+      url = await storeSessionUrl(auth, rawUrl, assetIndex.current);
+      assetIndex.current += 1;
+      if (!url && /^(https?:|blob:)/i.test(rawUrl)) url = rawUrl;
+    }
+    const x = Number(node.x);
+    const y = Number(node.y);
+    const canvasIndex = Math.round(Number(node.canvasIndex));
+    result.push({
+      id: text(node.id || randomUUID(), 120),
+      parentId: text(node.parentId, 120),
+      canvasIndex: Number.isFinite(canvasIndex) ? canvasIndex : result.length + 1,
+      kind: text(node.kind || 'image', 40),
+      url,
+      prompt: text(node.prompt, 6000),
+      title: text(node.title, 160),
+      x: Number.isFinite(x) ? Math.max(-8000, Math.min(8000, x)) : 0,
+      y: Number.isFinite(y) ? Math.max(-8000, Math.min(8000, y)) : 0,
+      createdAt: node.createdAt && !Number.isNaN(Date.parse(node.createdAt)) ? node.createdAt : new Date().toISOString(),
+      downloadMeta: sanitizeDownloadMeta(node.downloadMeta)
+    });
+  }
+  return result;
+}
+
+async function pruneSessionAssets(auth, session) {
+  const assetDir = path.join(auth.userDir, 'assets', SESSION_ASSET_ID);
+  const referenced = new Set();
+  const collect = (url) => {
+    const match = String(url || '').match(new RegExp(`/studio-api/history/${SESSION_ASSET_ID}/assets/([0-9]{1,3}\\.(?:png|jpg|webp))$`));
+    if (match) referenced.add(match[1]);
+  };
+  for (const url of session.results || []) collect(url);
+  for (const node of session.canvasNodes || []) collect(node?.url);
+  const files = await fs.readdir(assetDir).catch(() => []);
+  await Promise.all(files
+    .filter((fileName) => /^[0-9]{1,3}\.(png|jpg|webp)$/.test(fileName) && !referenced.has(fileName))
+    .map((fileName) => fs.rm(path.join(assetDir, fileName), { force: true })));
+}
+
+async function sanitizeSession(auth, body) {
+  const assetIndex = { current: 0 };
+  const results = await sanitizeSessionUrls(auth, body.results, assetIndex);
+  const videoResults = Array.isArray(body.videoResults) ? body.videoResults.slice(0, SESSION_URL_LIMIT).map((value) => text(value, 1200)).filter(Boolean) : [];
+  const canvasNodes = await sanitizeCanvasNodes(auth, body.canvasNodes, assetIndex);
+  const session = {
+    updatedAt: new Date().toISOString(),
+    sessionId: text(body.sessionId, 120),
+    mode: text(body.mode || 'image', 40),
+    prompt: text(body.prompt, 12000),
+    model: text(body.model, 160),
+    results,
+    videoResults,
+    resultBatchMeta: sanitizeSessionObject(body.resultBatchMeta),
+    canvasNodes,
+    selectedCanvasNodeId: text(body.selectedCanvasNodeId, 120),
+    canvasView: sanitizeCanvasView(body.canvasView),
+    status: text(body.status || 'idle', 40),
+    message: text(body.message, 1000),
+    progress: sanitizeSessionObject(body.progress),
+    timing: sanitizeSessionObject(body.timing),
+    selectedCase: sanitizeCase(body.selectedCase),
+    parameters: sanitizeSessionObject(body.parameters)
+  };
+  await pruneSessionAssets(auth, session);
+  return session;
+}
+
 async function sanitizeRecord(auth, body) {
   const recordId = cleanRecordId(body.id);
   const inputUrls = Array.isArray(body.resultUrls) ? body.resultUrls.slice(0, 4) : [];
@@ -532,6 +674,7 @@ async function sanitizeRecord(auth, body) {
 
   return {
     id: recordId,
+    sessionId: text(body.sessionId, 120),
     createdAt: body.createdAt && !Number.isNaN(Date.parse(body.createdAt)) ? body.createdAt : new Date().toISOString(),
     mode: text(body.mode || 'image', 40),
     prompt: text(body.prompt, 6000),
@@ -557,7 +700,7 @@ function parseRoute(req) {
 async function serveAsset(req, res, auth, parts) {
   const recordId = cleanRecordId(parts[2]);
   const fileName = parts[4] || '';
-  if (!/^[0-3]\.(png|jpg|webp)$/.test(fileName)) {
+  if (!/^[0-9]{1,3}\.(png|jpg|webp)$/.test(fileName)) {
     return sendJson(res, 404, { ok: false, error: 'ASSET_NOT_FOUND' });
   }
 
@@ -629,12 +772,30 @@ async function handler(req, res) {
     return sendJson(res, 200, { ok: true });
   }
 
-  if (parts[0] !== 'studio-api' || !['history', 'library', 'library-assets', 'prompt-presets', 'video-inspirations'].includes(parts[1])) {
+  if (parts[0] !== 'studio-api' || !['history', 'session', 'library', 'library-assets', 'prompt-presets', 'video-inspirations'].includes(parts[1])) {
     return sendJson(res, 404, { ok: false, error: 'NOT_FOUND' });
   }
 
   try {
     const auth = await authenticate(req);
+
+    if (req.method === 'GET' && parts[0] === 'studio-api' && parts[1] === 'session' && parts.length === 2) {
+      const session = await readSession(auth);
+      return sendJson(res, 200, { ok: true, session });
+    }
+
+    if (req.method === 'POST' && parts[0] === 'studio-api' && parts[1] === 'session' && parts.length === 2) {
+      const body = await readJsonBody(req);
+      const session = await sanitizeSession(auth, body);
+      await writeSession(auth, session);
+      return sendJson(res, 200, { ok: true, session });
+    }
+
+    if (req.method === 'DELETE' && parts[0] === 'studio-api' && parts[1] === 'session' && parts.length === 2) {
+      await fs.rm(sessionPath(auth), { force: true });
+      await fs.rm(path.join(auth.userDir, 'assets', SESSION_ASSET_ID), { recursive: true, force: true });
+      return sendJson(res, 200, { ok: true });
+    }
 
     if (req.method === 'GET' && parts[0] === 'studio-api' && parts[1] === 'library' && parts.length === 2) {
       const { payload } = await readLibrary();

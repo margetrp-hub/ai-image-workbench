@@ -30,7 +30,7 @@ STUDIO_PORT=8090 docker compose up --build
 ```env
 VITE_SUB2API_BASE_URL=https://sub2api.example.com
 VITE_SUB2API_GATEWAY_BASE_URL=https://sub2api.example.com
-VITE_SUB2API_IMAGE_ROUTE=responses
+VITE_SUB2API_IMAGE_ROUTE=auto
 VITE_SUB2API_RESPONSES_MODEL=gpt-5.5
 VITE_SUB2API_LOGIN_URL=https://studio.example.com/login
 VITE_STUDIO_HISTORY_BASE_URL=https://studio.example.com

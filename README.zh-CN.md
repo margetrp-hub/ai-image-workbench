@@ -2,9 +2,11 @@
 
 我做 `image-sub2api-studio`，是因为 Sub2API 已经把模型、Key、额度和 OpenAI 兼容接口接好了，但真正面向创作者的生图工作台还缺一层。
 
-我不想让用户每次都去拼接口参数，也不想把提示词模板、参考图、历史记录和生成结果散在一堆页面里。所以这个项目把这些东西收进一个轻量的 Web 工作台：登录 Sub2API、选择自己的 Key、写提示词、拖拽或粘贴参考图、调整尺寸和画质、生成图片、继续沿着上一张图迭代。
+我不想让用户每次都去拼接口参数，也不想把提示词模板、参考图、历史图库和生成结果散在一堆页面里。所以这个项目把这些东西收进一个轻量的 Web 工作台：登录 Sub2API、选择自己的 Key、写提示词、拖拽或粘贴参考图、调整尺寸和画质、生成图片，再沿着上一张图一步步继续迭代。
 
-`0.5.0` 是我认为可以拿出来给大家学习和自托管的第一个阶段版本。它不包含我的线上 Oh Laoo 首页，也不包含完整私有图库；它只开源这个基于 Sub2API 的生图工作站。
+`0.8.0` 是我把它从“能用的网页”往“创作工作台”推进的一版。页面现在以无限画布和底部创作会话为中心：第一次生成会成为 #1，选中 #1 再生成会延伸出 #2 / #3，并用连线保留关系。历史图库按会话保存，不再一张图一个项目；刷新、超时或停止后，也会尽量保留当前画布和已经收到的预览结果。
+
+这个仓库不包含线上首页，也不包含完整私有图库；它只开源这个基于 Sub2API 的生图工作站。
 
 演示入口：[studio.ohlaoo.com/studio/](https://studio.ohlaoo.com/studio/)
 
@@ -14,21 +16,22 @@
   <a href="./README.md"><img src="https://img.shields.io/badge/lang-English-blue?style=flat-square" alt="English"></a>
 </p>
 
-## 0.5 版本做到了什么
+## 0.8 做到了什么
 
-这一版我重点把“能真实使用”打通了：
-
-- 生图默认走 `/v1/responses`，`gpt-image-2` 等图片模型会直连调用，不再降级成 `gpt-5.5 + image_generation tool` 的兼容路径。
+- 生图默认走 `/v1/responses`，`gpt-image-2` 等图片模型会直连调用，不再降级成文字模型加 `image_generation` 工具的兼容路径。
 - 参考图编辑、Mask 局部重绘走 `/v1/images/edits`。
-- 页面可以从 Sub2API 同步用户 Key，并且只打码展示，不把完整 Key 暴露在 UI 上。
-- 生成结果会进入当前会话画布，也会进入历史记录；选中一张画布继续生成时，会保留上一轮提示词脉络。
-- 本地开发增加 Vite 代理，避免 `127.0.0.1` 调云端 Sub2API 时被浏览器 CORS 拦住。
-- 图片和视频工作区分开，视频区保留为后续扩展入口，不再和生图灵感混在一起。
-- README、部署说明、Docker/Nginx 示例、素材库边界和开源致谢都重新整理过。
+- 底部创作会话可以调用对话模型来优化提示词，会明确使用当前 Key 额度。
+- 选中画布节点后继续生成，会按 #1 -> #2 / #3 的方式保留创作分支。
+- 对话助手会尊重“衍生、局部修改、重写、不要、改成”等方向，不再强行把用户否定的旧内容带回来。
+- 当前会话、画布节点、选中节点、参数、进度和预览结果会通过 `/studio-api/session` 持久化。
+- 生图超时、停止或网络中断时，页面会进入“待确认”状态，提示上游可能仍在处理或已扣费，避免误导用户连续重复提交。
+- 历史图库按会话展示，当前会话中的生成结果不会再在左侧项目里重复拆成多条。
+- Sub2API Key 只打码展示，避免在 UI 中直接暴露完整 Key。
+- 模板/灵感内容可以作为 starter 数据，也可以改成登录后由 `/studio-api/library` 下发，方便生产环境保护私有素材。
 
 ## 截图
 
-截图来自当前 0.5 工作台界面，使用演示数据，Key 已打码。
+截图来自当前工作台界面，使用演示数据，Key 已打码。
 
 ![创作工作台主界面](docs/screenshots/studio-main.png)
 
@@ -38,11 +41,11 @@
 
 ![参考图上传](docs/screenshots/reference-upload.png)
 
-![模板库与灵感广场](docs/screenshots/template-library.png)
+![底部灵感与模板入口](docs/screenshots/template-library.png)
 
 ![Key 设置与打码展示](docs/screenshots/key-settings.png)
 
-![历史记录](docs/screenshots/history.png)
+![历史图库](docs/screenshots/history.png)
 
 ## 我把边界讲清楚
 
@@ -50,7 +53,7 @@
 
 Sub2API 负责：账号、Key、额度、模型、计费、OpenAI 兼容网关。
 
-`image-sub2api-studio` 负责：创作页面、提示词工作流、参考图上传、参数控制、画布续作、历史记录和部署示例。
+`image-sub2api-studio` 负责：创作页面、提示词工作流、参考图上传、参数控制、无限画布、画布续作、历史图库、当前会话持久化和部署示例。
 
 提示词模板来自社区学习材料和公开案例整理，适用时遵循 `CC BY 4.0` 许可证；使用和改编时请保留原作者或来源归属。更完整的边界说明见 [致谢与参考边界](docs/ACKNOWLEDGEMENTS.zh-CN.md)。
 
@@ -99,7 +102,7 @@ Remove-Item Env:\STUDIO_BASE_PATH
 ```env
 VITE_SUB2API_BASE_URL=https://sub2api.example.com
 VITE_SUB2API_GATEWAY_BASE_URL=https://sub2api.example.com
-VITE_SUB2API_IMAGE_ROUTE=responses
+VITE_SUB2API_IMAGE_ROUTE=auto
 VITE_SUB2API_RESPONSES_MODEL=gpt-5.5
 VITE_SUB2API_LOGIN_URL=https://studio.example.com/login
 VITE_STUDIO_HISTORY_BASE_URL=https://studio.example.com
@@ -112,19 +115,21 @@ VITE_DEV_SUB2API_PROXY_TARGET=https://sub2api.example.com
 
 - `VITE_SUB2API_BASE_URL` 用于登录、用户资料、Key 列表，会自动补成 `/api/v1`。
 - `VITE_SUB2API_GATEWAY_BASE_URL` 用于模型和生成接口，会自动补成 `/v1`。
-- `VITE_SUB2API_IMAGE_ROUTE=responses` 是当前推荐模式。图片模型直连 `/v1/responses`。
+- `VITE_SUB2API_IMAGE_ROUTE=auto` 是当前推荐模式：普通生图优先走 `/v1/responses`，参考图和 Mask 走 `/v1/images/edits`。
 - `legacy` 只保留给 `/v1/images/generations` 兼容场景。
 - `VITE_STUDIO_LIBRARY_AUTH_REQUIRED=true` 适合生产环境把模板库后端化以后再开启。
 
 ## VPS 部署思路
 
-我推荐把它当成静态前端 + 可选历史服务来部署：
+推荐把它当成静态前端 + Node 历史/会话服务来部署：
 
 ```text
-/var/www/image-sub2api-studio/    # 静态文件
-/opt/image-sub2api-studio/        # 可选 Node 历史服务
-/var/lib/image-sub2api-studio/    # 用户历史和受保护素材库
+/var/www/image-sub2api-studio/    # 静态文件，示例目录
+/opt/image-sub2api-studio/        # Node 历史/会话服务
+/var/lib/image-sub2api-studio/    # 用户历史图库、当前会话和受保护素材库
 ```
+
+如果你的 Nginx 实际读取的是另一个目录，就把核心包解压到那个目录。目录名不重要，关键是要和 Nginx `alias` 一致。
 
 更多细节见：
 
@@ -137,6 +142,13 @@ VITE_DEV_SUB2API_PROXY_TARGET=https://sub2api.example.com
 ```bash
 node scripts/package-studio-core-update.mjs
 ```
+
+这个命令会同时生成：
+
+- `image-sub2api-studio-core-update-*.zip`：覆盖静态目录。
+- `image-sub2api-studio-service-update-*.zip`：覆盖 `/opt/image-sub2api-studio`，用于更新历史/会话服务。
+
+0.8 需要服务包，因为刷新恢复、当前画布会话和历史图库都依赖 `/studio-api/session` 与 `/studio-api/history`。
 
 ## 素材库和防爬
 

@@ -21,7 +21,7 @@ const envPromptOptimizerModel = import.meta.env.VITE_SUB2API_PROMPT_OPTIMIZER_MO
 
 const providerDefaults = {
   apiKeySource: 'sub2api',
-  route: envImageRoute === 'legacy' ? 'legacy' : 'responses',
+  route: 'auto',
   manualApiKey: '',
   manualGatewayBaseUrl: '',
   responsesModel: envResponsesModel,
@@ -914,11 +914,14 @@ export class Sub2ApiClient {
     };
   }
 
-  async chatPromptAssistant({ apiKey, prompt, messages = [], size = '', aspectRatio = '', quality = '', resolutionTier = '', gatewayBaseUrl, model, onPartial, signal }) {
+  async chatPromptAssistant({ apiKey, prompt, basePrompt = '', userInstruction = '', selectedCanvasLabel = '', messages = [], size = '', aspectRatio = '', quality = '', resolutionTier = '', gatewayBaseUrl, model, onPartial, signal }) {
     const resolvedGatewayBaseUrl = normalizeGatewayBaseUrl(gatewayBaseUrl || this.gatewayBaseUrl);
     const assistantModel = normalizeResponsesModel(model || envPromptOptimizerModel || this.providerSettings.responsesModel || envResponsesModel);
     const context = [
-      prompt ? `当前可生成提示词:\n${String(prompt).trim()}` : '',
+      basePrompt ? `当前选中的画布基础提示词（仅作为上下文，不是必须保留）:\n${String(basePrompt).trim()}` : '',
+      userInstruction ? `用户最新创作方向（最高优先级）:\n${String(userInstruction).trim()}` : '',
+      !basePrompt && prompt ? `当前可生成提示词:\n${String(prompt).trim()}` : '',
+      selectedCanvasLabel ? `当前画布: ${String(selectedCanvasLabel).trim()}` : '',
       aspectRatio || size || resolutionTier || quality
         ? `当前生图参数: ${[
           aspectRatio ? `比例 ${aspectRatio}` : '',
@@ -951,7 +954,10 @@ export class Sub2ApiClient {
               '你是图片和视频创作工作台里的中文提示词助手。',
               '你和用户对话，帮助澄清想法、补全画面要素、整理可直接用于生成的提示词。',
               '不要直接生成图片，也不要假装已经生成图片。',
-              '如果用户给的是修改要求，请在现有提示词基础上延续，不要丢掉主体和限制。',
+              '用户最新消息优先级最高。如果用户说“不是、不要、去掉、改成、替换、删除”，必须移除被否定的元素，不能再绕回旧设定。',
+              '先判断方向：局部修改=保留未冲突的主体和风格；衍生=保留部分视觉语言但允许更换主体、场景或构图；重写=只按用户最新要求重新整理。',
+              '基础提示词只作为上下文。不要为了延续而强行保留和用户最新要求冲突的主体、材质、场景、文字或限制。',
+              '如果用户只是在聊天澄清，你可以简短追问；如果信息已足够，给出可直接生图的 finalPrompt。',
               '只输出 JSON，不要输出 Markdown。',
               'JSON 字段必须是：reply, finalPrompt。',
               'reply 是给用户看的简短中文回复；finalPrompt 是整理后的可生成提示词。'
@@ -1306,8 +1312,10 @@ export class Sub2ApiClient {
   }
 
   async generateImage({ apiKey, model, prompt, size, quality, outputFormat, moderation, n, referenceImages, onPartial, onProgress, route, gatewayBaseUrl, responsesModel, partialImages, signal }) {
-    const imageRoute = normalizeImageRoute(route || this.providerSettings.route || envImageRoute);
-    if (imageRoute !== 'legacy') {
+    const explicitRoute = route === undefined || route === null || route === '' ? '' : route;
+    const imageRoute = normalizeImageRoute(explicitRoute || envImageRoute || 'responses');
+    const effectiveImageRoute = imageRoute === 'auto' ? 'responses' : imageRoute;
+    if (effectiveImageRoute !== 'legacy') {
       try {
         return await this.generateImageViaResponses({
           apiKey,
@@ -1327,7 +1335,7 @@ export class Sub2ApiClient {
           signal
         });
       } catch (error) {
-        if (imageRoute === 'responses' || !shouldFallbackToLegacy(error)) {
+        if (effectiveImageRoute === 'responses' || !shouldFallbackToLegacy(error)) {
           throw error;
         }
       }
@@ -1468,6 +1476,23 @@ export class StudioHistoryClient {
     return payload.inspiration || null;
   }
 
+  async getCurrentSession() {
+    const payload = await this.request('/session');
+    return payload.session || null;
+  }
+
+  async saveCurrentSession(session) {
+    const payload = await this.request('/session', {
+      method: 'POST',
+      body: JSON.stringify(session)
+    });
+    return payload.session || session;
+  }
+
+  async clearCurrentSession() {
+    await this.request('/session', { method: 'DELETE' });
+  }
+
   async saveRecord(record) {
     const payload = await this.request('/history', {
       method: 'POST',
@@ -1495,6 +1520,32 @@ export class StudioHistoryClient {
     if (!response.ok) throw new Error(`HTTP_${response.status}`);
     const blob = await response.blob();
     return URL.createObjectURL(blob);
+  }
+
+  async resolveSessionAssets(session) {
+    if (!session) return null;
+    const resultUrls = Array.isArray(session.results) ? session.results : [];
+    const videoUrls = Array.isArray(session.videoResults) ? session.videoResults : [];
+    const canvasNodes = Array.isArray(session.canvasNodes) ? session.canvasNodes : [];
+    const [results, videoResults, resolvedCanvasNodes] = await Promise.all([
+      Promise.all(resultUrls.map((url) => this.resolveAssetUrl(url).catch(() => url))),
+      Promise.all(videoUrls.map((url) => this.resolveAssetUrl(url).catch(() => url))),
+      Promise.all(canvasNodes.map(async (node) => ({
+        ...node,
+        url: await this.resolveAssetUrl(node?.url).catch(() => node?.url || '')
+      })))
+    ]);
+    return {
+      ...session,
+      persistedResults: resultUrls,
+      persistedVideoResults: videoUrls,
+      results,
+      videoResults,
+      canvasNodes: resolvedCanvasNodes.map((node, index) => ({
+        ...node,
+        persistedUrl: canvasNodes[index]?.url || ''
+      }))
+    };
   }
 
   async resolveRecordAssets(record) {

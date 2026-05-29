@@ -34,6 +34,7 @@ The studio logs in to Sub2API and uses Sub2API as the account system.
 - image fallback/editing: `POST /v1/images/generations`, `POST /v1/images/edits`
 - video generation: `POST /v1/video/generations` task flow
 - studio history: `GET/POST/DELETE /studio-api/history`
+- current canvas session: `GET/POST/DELETE /studio-api/session`
 
 The browser stores the Sub2API access token in localStorage for this studio. It does not create another login provider.
 
@@ -50,7 +51,7 @@ When a visitor clicks generate without a valid Sub2API session, Studio redirects
 ```bash
 VITE_SUB2API_BASE_URL=https://sub2api.example.com
 VITE_SUB2API_GATEWAY_BASE_URL=https://sub2api.example.com
-VITE_SUB2API_IMAGE_ROUTE=responses
+VITE_SUB2API_IMAGE_ROUTE=auto
 VITE_SUB2API_RESPONSES_MODEL=gpt-5.5
 VITE_SUB2API_RESPONSES_PARTIAL_IMAGES=2
 VITE_SUB2API_LOGIN_URL=https://studio.example.com/login
@@ -84,7 +85,7 @@ Build the Studio for `/studio/`:
 
 ```bash
 STUDIO_BASE_PATH=/studio/ \
-VITE_SUB2API_IMAGE_ROUTE=responses \
+VITE_SUB2API_IMAGE_ROUTE=auto \
 VITE_SUB2API_RESPONSES_MODEL=gpt-5.5 \
 npm run build
 ```
@@ -92,7 +93,7 @@ npm run build
 Upload:
 
 ```text
-dist/*                                                -> /var/www/image-sub2api-studio/
+dist/*                                                -> /var/www/image-sub2api-studio/ or your Nginx alias directory
 package.json                                          -> /opt/image-sub2api-studio/package.json
 package-lock.json                                     -> /opt/image-sub2api-studio/package-lock.json
 scripts/image-sub2api-studio-history-service.mjs      -> /opt/image-sub2api-studio/scripts/

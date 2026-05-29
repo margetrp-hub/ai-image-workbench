@@ -7,9 +7,9 @@
 ## 本项目负责的内容
 
 - `studio.html` 和 `src/studio.jsx` 中面向 Sub2API 的创作工作流。
-- 图片和视频工作台 UI、参数控制、参考图上传、Key 打码展示和历史记录面板。
+- 图片和视频工作台 UI、参数控制、参考图上传、Key 打码展示和历史图库面板。
 - `src/sub2apiClient.js` 中的 Sub2API 接入逻辑。
-- `scripts/image-sub2api-studio-history-service.mjs` 中的可选用户历史服务。
+- `scripts/image-sub2api-studio-history-service.mjs` 中的可选用户历史图库服务。
 - `deploy/`、Docker、Nginx 相关部署示例。
 - `docs/screenshots/` 中展示本项目界面的截图。
 
@@ -37,7 +37,7 @@
 
 ## 产品和工作流参考
 
-公开 AI 生图工具、提示词图库和创作工作台产品，可作为产品和工作流参考。常见参考范围包括提示词编辑、参数控制、灵感卡片、历史记录、结果预览和受保护素材库。
+公开 AI 生图工具、提示词图库和创作工作台产品，可作为产品和工作流参考。常见参考范围包括提示词编辑、参数控制、灵感卡片、历史图库、结果预览和受保护素材库。
 
 本项目不包含第三方产品 UI 截图、私有图片、品牌素材或专有界面文件。
 

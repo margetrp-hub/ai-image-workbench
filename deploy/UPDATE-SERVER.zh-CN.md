@@ -5,15 +5,19 @@
 ## 结论
 
 - 不要每次重新上传 `images/` 图库。
-- 日常更新只上传 `image-sub2api-studio-core-update-*.zip`。
+- 日常更新先上传 `image-sub2api-studio-core-update-*.zip`。
+- 如果版本包含历史图库、当前会话、刷新恢复或服务端素材库改动，再上传 `image-sub2api-studio-service-update-*.zip`。
 - 只有图片文件本身变了，才单独上传图片包或同步对象存储。
 
-## 0.5 更新重点
+## 0.8 更新重点
 
 - 生图默认直连 `/v1/responses` 的图片模型，例如 `gpt-image-2`。
 - 参考图编辑和 Mask 局部重绘走 `/v1/images/edits`。
-- 服务器后台看到入站和上游都是 `/v1/responses` 时，说明没有走旧的降级链路。
-- 如果服务器上图片库已经完整，0.5 更新只需要上传核心包。
+- 底部创作会话调用 `/v1/chat/completions` 做提示词优化。
+- 当前画布、选中节点、提示词上下文、参数、进度和预览结果会通过 `/studio-api/session` 保存。
+- 历史图库和左侧项目按会话归类，不再一张图拆成一个项目。
+- 生图超时、停止或前端断开时会进入“待确认”，提醒上游可能仍在处理或已扣费。
+- 服务器后台看到文生图入站和上游都是 `/v1/responses` 时，说明没有走旧的降级链路。
 
 ## 本地打包原则
 
@@ -46,29 +50,58 @@ npm run build
 Remove-Item Env:\STUDIO_BASE_PATH
 ```
 
-生成核心包：
+生成核心包和服务包：
 
 ```bash
 node scripts/package-studio-core-update.mjs
 ```
 
+脚本会同时生成两个包：
+
+- `image-sub2api-studio-core-update-*.zip`：覆盖静态目录。
+- `image-sub2api-studio-service-update-*.zip`：覆盖 `/opt/image-sub2api-studio`，用于更新历史/会话服务。
+
 ## 上传到服务器
 
 ```bash
 scp release/image-sub2api-studio-core-update-YYYYMMDD-HHMMSS.zip user@YOUR_SERVER:/home/user/
+scp release/image-sub2api-studio-service-update-YYYYMMDD-HHMMSS.zip user@YOUR_SERVER:/home/user/
 ```
 
 ## 在服务器覆盖更新
 
 注意：不要删除服务器现有图片目录。
 
-```bash
-cd /var/www/image-sub2api-studio
+如果你的 Nginx 静态目录是示例目录：
 
+```bash
+sudo mkdir -p /var/www/image-sub2api-studio
 sudo unzip -o /home/user/image-sub2api-studio-core-update-YYYYMMDD-HHMMSS.zip -d /var/www/image-sub2api-studio
 
 sudo find /var/www/image-sub2api-studio -type d -exec chmod 755 {} \;
 sudo find /var/www/image-sub2api-studio -type f -exec chmod 644 {} \;
+```
+
+如果你的线上站点实际读取 `/var/www/ohlaoo-studio`，就改成：
+
+```bash
+sudo mkdir -p /var/www/ohlaoo-studio
+sudo unzip -o /home/user/image-sub2api-studio-core-update-YYYYMMDD-HHMMSS.zip -d /var/www/ohlaoo-studio
+
+sudo find /var/www/ohlaoo-studio -type d -exec chmod 755 {} \;
+sudo find /var/www/ohlaoo-studio -type f -exec chmod 644 {} \;
+```
+
+如果这次包含 `service-update` 包：
+
+```bash
+sudo mkdir -p /opt/image-sub2api-studio
+sudo unzip -o /home/user/image-sub2api-studio-service-update-YYYYMMDD-HHMMSS.zip -d /opt/image-sub2api-studio
+
+cd /opt/image-sub2api-studio
+sudo npm ci --omit=dev
+sudo systemctl restart image-sub2api-studio-history
+curl http://127.0.0.1:8787/studio-api/health
 ```
 
 ## 验证
@@ -77,9 +110,9 @@ sudo find /var/www/image-sub2api-studio -type f -exec chmod 644 {} \;
 
 ```bash
 curl -I https://studio.example.com/studio/
-curl -I https://studio.example.com/studio/studio-assets/
-curl -I https://studio.example.com/studio/cases.json
-curl -I https://studio.example.com/studio/inspirations.json
+curl -I https://studio.example.com/studio/studio-assets/studio-g-PhJdYt.js
+curl -I https://studio.example.com/studio/studio-assets/studio-CNmg3NkT.css
+curl -I https://studio.example.com/studio-api/health
 ```
 
 实际 JS/CSS 文件名带 hash，以 `dist/studio.html` 里的 `<script>` 和 `<link>` 为准。
@@ -123,5 +156,7 @@ find /var/www/image-sub2api-studio/images -maxdepth 1 -type f -name 'case*.jpg' 
 find /var/www/image-sub2api-studio/images/thumbs -type f -name '*.webp' | wc -l
 find /var/www/image-sub2api-studio/images/thumbs/category-covers -type f -name '*.webp' | wc -l
 ```
+
+如果你的实际静态目录是 `/var/www/ohlaoo-studio`，把上面的路径替换掉即可。
 
 如果数量和上次一致，并且页面能正常访问，就不需要重新上传图片库。

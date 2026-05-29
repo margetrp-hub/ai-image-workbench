@@ -1,10 +1,12 @@
 # image-sub2api-studio
 
-I built `image-sub2api-studio` because Sub2API already solves the hard backend layer: models, keys, quota, billing, and OpenAI-compatible routes. What I wanted was a lighter creation workstation on top of it.
+I built `image-sub2api-studio` because Sub2API already solves the backend layer: models, keys, quota, billing, and OpenAI-compatible routes. What I wanted was a lighter creation workstation on top of it.
 
-I did not want users to manually assemble image API payloads every time. I wanted prompt writing, reference images, model selection, quality settings, generation results, and history to live in one focused page. This project is that front-end layer.
+I did not want users to manually assemble image API payloads every time. I wanted prompt writing, reference images, model selection, quality settings, generation results, canvas iteration, and history gallery to live in one focused page.
 
-`0.5.0` is the first version I feel comfortable sharing as a self-hostable learning and deployment artifact. It does not include my Oh Laoo home page or my full private image library. It only open-sources the Sub2API image studio.
+`0.8.0` moves the project from a usable web page toward a real creation desk. The interface now centers on an infinite canvas and a bottom creation conversation. The first generation becomes #1; selecting #1 and generating again creates #2 / #3, with visible lineage lines. History is grouped by creation session rather than by single image, and refreshes, timeouts, or manual stops preserve as much current canvas state as possible.
+
+This repository does not include the production home page or the full private image library. It only open-sources the Sub2API image studio.
 
 Demo: [studio.ohlaoo.com/studio/](https://studio.ohlaoo.com/studio/)
 
@@ -14,19 +16,22 @@ Demo: [studio.ohlaoo.com/studio/](https://studio.ohlaoo.com/studio/)
   <a href="./README.zh-CN.md"><img src="https://img.shields.io/badge/lang-简体中文-blue?style=flat-square" alt="简体中文"></a>
 </p>
 
-## What 0.5 Does
+## What 0.8 Does
 
 - Image generation uses `/v1/responses` by default. Image models such as `gpt-image-2` are called directly instead of falling back to a text model plus an `image_generation` tool.
 - Reference-image editing and mask redraw use `/v1/images/edits`.
-- Sub2API keys can be selected in the UI, with masked display.
-- Results stay in the current canvas and in history. Selecting a canvas node lets the next prompt continue from the previous image.
-- Local Vite development can proxy `/v1`, `/api`, and `/login` to a cloud Sub2API endpoint to avoid browser CORS during real upstream tests.
-- Image and video workspaces are separated. The video workspace is kept as a future extension surface.
-- README, deployment notes, Docker/Nginx samples, asset-library boundaries, and acknowledgements have been cleaned up for release.
+- The bottom creation conversation can call a chat model to refine prompts and uses the current Sub2API key quota.
+- Selecting a canvas node and generating again keeps #1 -> #2 / #3 lineage.
+- The prompt assistant respects directions such as derive, local edit, rewrite, remove, and replace; it should not reintroduce details the user has rejected.
+- Current canvas sessions are saved through `/studio-api/session`, isolated by the authenticated Sub2API user.
+- Timeout, stop, and network interruption states are shown as pending review when the upstream request may still be processing or charged.
+- The history gallery is grouped by creation session, while the left project list no longer splits one session into one project per image.
+- Sub2API keys are masked in the UI.
+- Starter prompt and inspiration data can remain static for demos, or move behind `/studio-api/library` for protected production deployments.
 
 ## Screenshots
 
-Screenshots come from the current 0.5 workspace and use demo data with masked keys.
+Screenshots come from the current workspace and use demo data with masked keys.
 
 ![Main studio workspace](docs/screenshots/studio-main.png)
 
@@ -36,11 +41,11 @@ Screenshots come from the current 0.5 workspace and use demo data with masked ke
 
 ![Reference upload](docs/screenshots/reference-upload.png)
 
-![Template library](docs/screenshots/template-library.png)
+![Bottom inspiration and template entry](docs/screenshots/template-library.png)
 
 ![Masked key settings](docs/screenshots/key-settings.png)
 
-![History](docs/screenshots/history.png)
+![History gallery](docs/screenshots/history.png)
 
 ## Boundary
 
@@ -48,7 +53,7 @@ This repository is not Sub2API itself and not a model gateway.
 
 Sub2API owns accounts, keys, quota, models, billing, and OpenAI-compatible gateway routes.
 
-`image-sub2api-studio` owns the creation UI: prompts, reference upload, parameter controls, canvas continuation, history, and deployment samples.
+`image-sub2api-studio` owns the creation UI: prompts, reference upload, parameter controls, infinite canvas, canvas continuation, history gallery, current-session persistence, and deployment samples.
 
 Community prompt templates are used as learning/reference material. Where applicable, prompt template content follows `CC BY 4.0`; keep attribution to original authors or sources when using or adapting it. See [Acknowledgements and Reference Boundaries](docs/ACKNOWLEDGEMENTS.md).
 
@@ -97,7 +102,7 @@ Upload the files from `dist/`. Do not upload the source-root `studio.html` direc
 ```env
 VITE_SUB2API_BASE_URL=https://sub2api.example.com
 VITE_SUB2API_GATEWAY_BASE_URL=https://sub2api.example.com
-VITE_SUB2API_IMAGE_ROUTE=responses
+VITE_SUB2API_IMAGE_ROUTE=auto
 VITE_SUB2API_RESPONSES_MODEL=gpt-5.5
 VITE_SUB2API_LOGIN_URL=https://studio.example.com/login
 VITE_STUDIO_HISTORY_BASE_URL=https://studio.example.com
@@ -110,19 +115,21 @@ Notes:
 
 - `VITE_SUB2API_BASE_URL` is normalized to `/api/v1` for login, profile, and key-list APIs.
 - `VITE_SUB2API_GATEWAY_BASE_URL` is normalized to `/v1` for model and generation routes.
-- `VITE_SUB2API_IMAGE_ROUTE=responses` is the recommended mode for this release.
+- `VITE_SUB2API_IMAGE_ROUTE=auto` is the recommended mode for this release: text-to-image uses `/v1/responses`, while reference image and Mask flows use `/v1/images/edits`.
 - `legacy` is kept only for `/v1/images/generations` compatibility.
 - Set `VITE_STUDIO_LIBRARY_AUTH_REQUIRED=true` only after the authenticated `/studio-api/library` service is available.
 
 ## VPS Layout
 
-I usually deploy it as static front-end files plus an optional history service:
+I usually deploy it as static front-end files plus the Node history/session service:
 
 ```text
-/var/www/image-sub2api-studio/    # Static files
-/opt/image-sub2api-studio/        # Optional Node history service
-/var/lib/image-sub2api-studio/    # User history and protected library assets
+/var/www/image-sub2api-studio/    # Static files, example path
+/opt/image-sub2api-studio/        # Node history/session service
+/var/lib/image-sub2api-studio/    # User history gallery, current session, and protected assets
 ```
+
+If your Nginx server block reads another path, unzip the core package there instead. The directory name does not matter; it only needs to match the Nginx `alias`.
 
 More details:
 
@@ -130,11 +137,18 @@ More details:
 - [Docker guide](docs/DOCKER.zh-CN.md)
 - [Server update guide](deploy/UPDATE-SERVER.zh-CN.md)
 
-If the server already has an image library, normal updates only need the core package:
+If the server already has an image library, normal front-end updates do not need the image library again:
 
 ```bash
 node scripts/package-studio-core-update.mjs
 ```
+
+This command creates:
+
+- `image-sub2api-studio-core-update-*.zip`: static front-end files.
+- `image-sub2api-studio-service-update-*.zip`: `/opt/image-sub2api-studio` service files.
+
+For 0.8, upload the service package when using current-session persistence, refresh recovery, or the history gallery service.
 
 ## Asset Library Strategy
 

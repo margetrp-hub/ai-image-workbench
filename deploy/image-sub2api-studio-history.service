@@ -1,5 +1,5 @@
 [Unit]
-Description=image-sub2api-studio per-user history service
+Description=image-sub2api-studio per-user history and session service
 After=network.target
 
 [Service]

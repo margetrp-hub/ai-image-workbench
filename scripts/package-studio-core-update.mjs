@@ -19,6 +19,14 @@ const include = [
   'style-library.json',
   'studio-assets'
 ];
+const serviceInclude = [
+  'package.json',
+  'package-lock.json',
+  'scripts/image-sub2api-studio-history-service.mjs',
+  'deploy/image-sub2api-studio-history.service',
+  'deploy/nginx-sub2api-studio.conf',
+  'deploy/UPDATE-SERVER.zh-CN.md'
+];
 
 function pad(value) {
   return String(value).padStart(2, '0');
@@ -41,17 +49,35 @@ async function exists(path) {
   }
 }
 
+function zipDirectory(sourceDir, zipPath) {
+  if (process.platform === 'win32') {
+    execFileSync('tar.exe', ['-a', '-cf', zipPath, '-C', sourceDir, '.'], { stdio: 'inherit' });
+    return;
+  }
+  execFileSync('zip', ['-qr', zipPath, '.'], { cwd: sourceDir, stdio: 'inherit' });
+}
+
 async function main() {
+  execFileSync(
+    process.platform === 'win32' ? 'cmd.exe' : 'npm',
+    process.platform === 'win32' ? ['/c', 'npm', 'run', 'build:studio'] : ['run', 'build:studio'],
+    { stdio: 'inherit' }
+  );
+
   if (!(await exists(distDir))) {
     throw new Error('dist/ not found. Run `npm run build` first.');
   }
 
   const stamp = stampLocal();
   const tempDir = join(tmpdir(), `image-sub2api-studio-core-${stamp}`);
+  const serviceTempDir = join(tmpdir(), `image-sub2api-studio-service-${stamp}`);
   const zipPath = join(releaseDir, `image-sub2api-studio-core-update-${stamp}.zip`);
+  const serviceZipPath = join(releaseDir, `image-sub2api-studio-service-update-${stamp}.zip`);
 
   await rm(tempDir, { recursive: true, force: true });
+  await rm(serviceTempDir, { recursive: true, force: true });
   await mkdir(tempDir, { recursive: true });
+  await mkdir(serviceTempDir, { recursive: true });
   await mkdir(releaseDir, { recursive: true });
 
   for (const item of include) {
@@ -60,18 +86,19 @@ async function main() {
     await cp(source, join(tempDir, item), { recursive: true });
   }
 
-  execFileSync(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-Command',
-      `Compress-Archive -Path (Join-Path '${tempDir.replace(/'/g, "''")}' '*') -DestinationPath '${zipPath.replace(/'/g, "''")}' -Force`
-    ],
-    { stdio: 'inherit' }
-  );
+  for (const item of serviceInclude) {
+    const source = join(root, item);
+    if (!(await exists(source))) continue;
+    await cp(source, join(serviceTempDir, item), { recursive: true });
+  }
+
+  zipDirectory(tempDir, zipPath);
+  zipDirectory(serviceTempDir, serviceZipPath);
 
   await rm(tempDir, { recursive: true, force: true });
+  await rm(serviceTempDir, { recursive: true, force: true });
   console.log(zipPath);
+  console.log(serviceZipPath);
 }
 
 main().catch((error) => {

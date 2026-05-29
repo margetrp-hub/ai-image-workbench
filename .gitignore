@@ -39,6 +39,7 @@ scripts/install-style-skill.mjs
 # Generated deployment packages and local QA output
 release/
 output/
+tmp/
 .tmp/
 .kiro/
 .playwright-cli/

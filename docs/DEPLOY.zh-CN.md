@@ -4,7 +4,9 @@
 
 - 静态创作工作台：`studio.html` 和前端资源。
 - Sub2API 接入：登录、用户资料、Key 列表、模型列表和生成接口。
-- 可选历史服务：把生成记录按 Sub2API 用户隔离保存。
+- 历史/会话服务：把生成记录和当前画布会话按 Sub2API 用户隔离保存。
+
+0.8 版本建议启用 Node 历史/会话服务。它不仅保存历史图库，也通过 `/studio-api/session` 保存当前画布会话。生产环境请把 `STUDIO_DATA_DIR` 指到持久目录，例如 `/var/lib/image-sub2api-studio`。如果这个目录放在临时目录或容器内部，刷新恢复、跨浏览器恢复和用户历史图库都会在重建后丢失。
 
 ## 1. 准备环境
 
@@ -45,7 +47,7 @@ Vite 输出本地地址后，打开 `/studio.html`。
 ```env
 VITE_SUB2API_BASE_URL=https://sub2api.example.com
 VITE_SUB2API_GATEWAY_BASE_URL=https://sub2api.example.com
-VITE_SUB2API_IMAGE_ROUTE=responses
+VITE_SUB2API_IMAGE_ROUTE=auto
 VITE_SUB2API_RESPONSES_MODEL=gpt-5.5
 VITE_SUB2API_LOGIN_URL=https://studio.example.com/login
 VITE_STUDIO_HISTORY_BASE_URL=https://studio.example.com
@@ -85,10 +87,12 @@ Remove-Item Env:\STUDIO_BASE_PATH
 推荐目录：
 
 ```text
-/var/www/image-sub2api-studio/     # 静态文件
-/opt/image-sub2api-studio/         # Node 历史服务
-/var/lib/image-sub2api-studio/     # 用户历史和受保护素材库
+/var/www/image-sub2api-studio/     # 静态文件，示例目录
+/opt/image-sub2api-studio/         # Node 历史/会话服务
+/var/lib/image-sub2api-studio/     # 用户历史图库、当前会话和受保护素材库
 ```
+
+如果你的 Nginx 实际读取 `/var/www/ohlaoo-studio`，就把静态文件上传到 `/var/www/ohlaoo-studio`。目录名不重要，关键是要和 Nginx `alias` 一致。
 
 构建并上传：
 
@@ -98,7 +102,7 @@ rsync -av --delete dist/ user@server:/var/www/image-sub2api-studio/
 rsync -av package.json package-lock.json scripts/ deploy/ user@server:/opt/image-sub2api-studio/
 ```
 
-服务器安装历史服务依赖：
+服务器安装历史/会话服务依赖：
 
 ```bash
 sudo mkdir -p /opt/image-sub2api-studio/scripts /var/www/image-sub2api-studio /var/lib/image-sub2api-studio
@@ -176,14 +180,15 @@ Remove-Item Env:\SUB2API_BASE_URL,Env:\SUB2API_EMAIL,Env:\SUB2API_PASSWORD
 
 ## 7. 生图链路检查
 
-0.5 版本推荐链路：
+0.8 推荐链路：
 
 ```text
 文生图：POST /v1/responses，模型使用 gpt-image-2 等图片模型
 参考图/Mask：POST /v1/images/edits
+助手对话：POST /v1/chat/completions
 ```
 
-如果你在 Sub2API 后台看到入站和上游都是 `/v1/responses`，模型是 `gpt-image-2`，说明没有走旧的降级链路。
+如果你在 Sub2API 后台看到文生图入站和上游都是 `/v1/responses`，模型是 `gpt-image-2`，说明没有走旧的降级链路。
 
 ## 8. 素材库与防爬
 
@@ -212,11 +217,8 @@ node_modules/
 dist/
 release/
 output/
+tmp/
 .tmp/
 data/images/
 .env.local
 ```
-
-## 10. 许可证
-
-代码使用仓库根目录的 `LICENSE`。提示词模板内容来自社区，遵循 CC BY 4.0 许可证；使用和改编时请保留原作者或来源归属。
