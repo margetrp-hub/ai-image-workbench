@@ -1,20 +1,65 @@
 services:
-  image-sub2api-studio:
+  studio-web:
     build:
       context: .
+      target: web
       args:
-        VITE_BASE_PATH: ${VITE_BASE_PATH:-/}
-        STUDIO_BASE_PATH: ${STUDIO_BASE_PATH:-/}
+        VITE_BASE_PATH: ${VITE_BASE_PATH:-/studio/}
+        STUDIO_BASE_PATH: ${STUDIO_BASE_PATH:-/studio/}
         VITE_SUB2API_BASE_URL: ${VITE_SUB2API_BASE_URL:-}
         VITE_SUB2API_GATEWAY_BASE_URL: ${VITE_SUB2API_GATEWAY_BASE_URL:-}
-        VITE_SUB2API_IMAGE_ROUTE: ${VITE_SUB2API_IMAGE_ROUTE:-responses}
+        VITE_SUB2API_IMAGE_ROUTE: ${VITE_SUB2API_IMAGE_ROUTE:-auto}
         VITE_SUB2API_RESPONSES_MODEL: ${VITE_SUB2API_RESPONSES_MODEL:-gpt-5.5}
         VITE_SUB2API_RESPONSES_PARTIAL_IMAGES: ${VITE_SUB2API_RESPONSES_PARTIAL_IMAGES:-2}
-        VITE_SUB2API_LOGIN_URL: ${VITE_SUB2API_LOGIN_URL:-}
+        VITE_SUB2API_LOGIN_URL: ${VITE_SUB2API_LOGIN_URL:-/login}
         VITE_STUDIO_HISTORY_BASE_URL: ${VITE_STUDIO_HISTORY_BASE_URL:-}
         VITE_STUDIO_BACK_URL: ${VITE_STUDIO_BACK_URL:-/}
         VITE_STUDIO_LIBRARY_AUTH_REQUIRED: ${VITE_STUDIO_LIBRARY_AUTH_REQUIRED:-false}
-    image: image-sub2api-studio:local
+    image: image-sub2api-studio-web:local
+    environment:
+      SUB2API_UPSTREAM: ${SUB2API_UPSTREAM:-http://host.docker.internal:8080}
+      STUDIO_HISTORY_UPSTREAM: http://studio-history:8787
+      STUDIO_NGINX_CLIENT_MAX_BODY_SIZE: ${STUDIO_NGINX_CLIENT_MAX_BODY_SIZE:-120m}
     ports:
       - "${STUDIO_PORT:-8080}:80"
+    depends_on:
+      studio-history:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/studio/ >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  studio-history:
+    build:
+      context: .
+      target: history
+    image: image-sub2api-studio-history:local
+    environment:
+      SUB2API_BASE_URL: ${SUB2API_UPSTREAM:-http://host.docker.internal:8080}
+      STUDIO_HISTORY_HOST: 0.0.0.0
+      STUDIO_HISTORY_PORT: 8787
+      STUDIO_DATA_DIR: /data
+      STUDIO_LIBRARY_DIR: /app/library
+      STUDIO_LIBRARY_ASSET_DIR: /app/library/images
+      STUDIO_HISTORY_LIMIT: ${STUDIO_HISTORY_LIMIT:-200}
+      STUDIO_SESSION_NODE_LIMIT: ${STUDIO_SESSION_NODE_LIMIT:-80}
+      STUDIO_ALLOWED_ORIGINS: ${STUDIO_ALLOWED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+    volumes:
+      - studio-data:/data
+      - ${STUDIO_LIBRARY_DIR:-./public}:/app/library:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/studio-api/health >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  studio-data:

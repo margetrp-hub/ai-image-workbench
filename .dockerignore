@@ -2,6 +2,7 @@
 .github
 .playwright-cli
 .tmp
+tmp
 .ohlaoo-studio-data
 .image-sub2api-studio-data
 .tmp-history-test

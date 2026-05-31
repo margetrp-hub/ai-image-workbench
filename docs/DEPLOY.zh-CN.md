@@ -144,9 +144,11 @@ sudo systemctl reload nginx
 
 ## 5. Docker
 
+Docker 形态包含两个容器：`studio-web` 和 `studio-history`。历史图库、当前画布会话和本地化图片资产会保存到 `studio-data` volume。
+
 ```bash
 cp .env.example .env
-docker compose up --build
+docker compose up --build -d
 ```
 
 默认访问：
@@ -155,7 +157,13 @@ docker compose up --build
 http://localhost:8080/studio/
 ```
 
-更多见 [Docker 快速部署](./DOCKER.zh-CN.md)。
+如果 Sub2API 已经跑在宿主机 `127.0.0.1:8080`，保持：
+
+```env
+SUB2API_UPSTREAM=http://host.docker.internal:8080
+```
+
+更多见 [Docker 生产部署](./DOCKER.zh-CN.md)。
 
 ## 6. Sub2API 合约检查
 

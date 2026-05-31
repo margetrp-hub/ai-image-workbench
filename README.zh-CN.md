@@ -134,7 +134,7 @@ VITE_DEV_SUB2API_PROXY_TARGET=https://sub2api.example.com
 更多细节见：
 
 - [部署指南](docs/DEPLOY.zh-CN.md)
-- [Docker 快速部署](docs/DOCKER.zh-CN.md)
+- [Docker 生产部署](docs/DOCKER.zh-CN.md)
 - [服务器更新说明](deploy/UPDATE-SERVER.zh-CN.md)
 
 服务器上如果已经有图片库，后续更新通常只需要上传核心包，不需要重复上传图库。
@@ -187,7 +187,7 @@ npm run check:sub2api
 │   └── package-studio-core-update.mjs
 ├── deploy/
 │   ├── nginx-sub2api-studio.conf
-│   ├── docker-nginx.conf
+│   ├── docker-nginx.conf.template
 │   ├── image-sub2api-studio-history.service
 │   └── UPDATE-SERVER.zh-CN.md
 ├── docs/

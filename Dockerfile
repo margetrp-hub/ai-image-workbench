@@ -10,7 +10,7 @@ ARG VITE_BASE_PATH=/
 ARG STUDIO_BASE_PATH=/
 ARG VITE_SUB2API_BASE_URL=
 ARG VITE_SUB2API_GATEWAY_BASE_URL=
-ARG VITE_SUB2API_IMAGE_ROUTE=responses
+ARG VITE_SUB2API_IMAGE_ROUTE=auto
 ARG VITE_SUB2API_RESPONSES_MODEL=gpt-5.5
 ARG VITE_SUB2API_RESPONSES_PARTIAL_IMAGES=2
 ARG VITE_SUB2API_LOGIN_URL=
@@ -30,9 +30,33 @@ ENV VITE_STUDIO_BACK_URL=$VITE_STUDIO_BACK_URL
 ENV VITE_STUDIO_LIBRARY_AUTH_REQUIRED=$VITE_STUDIO_LIBRARY_AUTH_REQUIRED
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.27-alpine AS web
 
-COPY deploy/docker-nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/docker-nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80
+
+FROM node:22-alpine AS history
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV STUDIO_HISTORY_HOST=0.0.0.0
+ENV STUDIO_HISTORY_PORT=8787
+ENV STUDIO_DATA_DIR=/data
+ENV STUDIO_LIBRARY_DIR=/app/library
+ENV STUDIO_LIBRARY_ASSET_DIR=/app/library/images
+
+COPY scripts/image-sub2api-studio-history-service.mjs ./scripts/image-sub2api-studio-history-service.mjs
+COPY public ./library
+
+RUN mkdir -p /data /app/library/images \
+  && chown -R node:node /data /app
+
+USER node
+
+VOLUME ["/data"]
+EXPOSE 8787
+
+CMD ["node", "scripts/image-sub2api-studio-history-service.mjs"]

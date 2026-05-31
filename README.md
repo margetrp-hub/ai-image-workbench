@@ -134,7 +134,7 @@ If your Nginx server block reads another path, unzip the core package there inst
 More details:
 
 - [Deployment guide](docs/DEPLOY.zh-CN.md)
-- [Docker guide](docs/DOCKER.zh-CN.md)
+- [Docker production guide](docs/DOCKER.zh-CN.md)
 - [Server update guide](deploy/UPDATE-SERVER.zh-CN.md)
 
 If the server already has an image library, normal front-end updates do not need the image library again:
@@ -187,7 +187,7 @@ This checks login, profile, and key-list behavior. It does not start paid genera
 │   └── package-studio-core-update.mjs
 ├── deploy/
 │   ├── nginx-sub2api-studio.conf
-│   ├── docker-nginx.conf
+│   ├── docker-nginx.conf.template
 │   ├── image-sub2api-studio-history.service
 │   └── UPDATE-SERVER.zh-CN.md
 ├── docs/
