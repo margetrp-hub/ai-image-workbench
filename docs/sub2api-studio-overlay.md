@@ -30,8 +30,8 @@ The studio logs in to Sub2API and uses Sub2API as the account system.
 - user profile/balance: `GET /api/v1/user/profile`
 - user keys: `GET /api/v1/keys`
 - create key when none exists: `POST /api/v1/keys`
-- image generation: `POST /v1/responses`; image models such as `gpt-image-2` are called directly, while non-image response models keep `image_generation` compatibility
-- image fallback/editing: `POST /v1/images/generations`, `POST /v1/images/edits`
+- image generation: `POST /v1/images/generations`; image models such as `gpt-image-2` are called directly
+- image editing and explicit compatibility testing: `POST /v1/images/edits`, optional `POST /v1/responses`
 - video generation: `POST /v1/video/generations` task flow
 - studio history: `GET/POST/DELETE /studio-api/history`
 - current canvas session: `GET/POST/DELETE /studio-api/session`

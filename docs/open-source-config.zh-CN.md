@@ -27,7 +27,7 @@ VITE_STUDIO_LIBRARY_AUTH_REQUIRED=false
 
 - `VITE_SUB2API_BASE_URL`：Sub2API 管理接口根域名，前端会自动补成 `/api/v1`。
 - `VITE_SUB2API_GATEWAY_BASE_URL`：OpenAI 兼容接口根域名，前端会自动补成 `/v1`。
-- `VITE_SUB2API_IMAGE_ROUTE`：`auto` 为推荐模式，普通生图使用 `/v1/responses`，参考图和 Mask 使用 `/v1/images/edits`；`legacy` 保留给 `/v1/images/generations` 兼容场景。
+- `VITE_SUB2API_IMAGE_ROUTE`：`auto` 为推荐模式，普通生图使用 `/v1/images/generations`，参考图和 Mask 使用 `/v1/images/edits`；只有上游明确支持时才改成 `responses`。
 - `VITE_SUB2API_LOGIN_URL`：登录页地址，登录完成后应能带用户回到 Studio。
 - `VITE_STUDIO_HISTORY_BASE_URL`：历史图库服务所在域名，默认同域调用 `/studio-api`。
 - `VITE_STUDIO_BACK_URL`：工作台左上角返回链接。

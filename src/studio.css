@@ -1,5 +1,5 @@
 :root {
-  --studio-build-id: route-fix-20260531;
+  --studio-build-id: generations-mask-fix-20260531;
   color-scheme: light;
   font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
   line-height: 1.5;
@@ -1303,16 +1303,29 @@ select:disabled {
   gap: 8px;
 }
 
+.creationDesk .maskReferenceBox {
+  width: clamp(520px, 48vw, 860px);
+  max-width: min(860px, calc(100vw - 260px));
+  min-width: 420px;
+  min-height: 520px;
+  max-height: calc(100vh - 132px);
+  resize: both;
+  overflow: auto;
+  align-content: start;
+}
+
 .maskEditorPanel {
   position: relative;
   display: grid;
   gap: 10px;
+  min-height: 0;
 }
 
 .maskToolbar {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  align-items: start;
 }
 
 .maskToolGroup {
@@ -1386,8 +1399,8 @@ select:disabled {
 }
 
 .maskCanvasWrap {
-  min-height: 320px;
-  max-height: 560px;
+  min-height: clamp(360px, 52vh, 680px);
+  max-height: none;
   overflow: auto;
   display: grid;
   place-items: center;
@@ -1407,10 +1420,13 @@ select:disabled {
 .maskCanvasStack {
   position: relative;
   line-height: 0;
+  max-width: 100%;
+  max-height: 100%;
 }
 
 .maskCanvasStack canvas {
   display: block;
+  max-width: none;
 }
 
 .maskPaintCanvas,
@@ -7177,6 +7193,46 @@ label span,
   line-height: 1.1;
 }
 
+.railPreferenceRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.railLanguageButton {
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.railLanguageButton span {
+  line-height: 1;
+}
+
+.collapsedRailBottom {
+  margin-top: auto;
+  display: grid;
+  gap: 8px;
+  place-items: center;
+}
+
+.templateRail.collapsed .collapsedRailBottom .railAvatarButton {
+  margin-top: 0;
+}
+
+.templateRail.collapsed .collapsedRailBottom .railLanguageButton {
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  gap: 1px;
+}
+
+.templateRail.collapsed .collapsedRailBottom .railLanguageButton span {
+  font-size: 9px;
+}
+
 .referenceBox {
   width: min(340px, calc(100vw - 260px));
   padding: 11px;
@@ -7923,7 +7979,6 @@ label span,
 }
 
 .primaryAction.isStopAction,
-.composerGenerateAction.isStopAction,
 .paramGenerateAction.isStopAction,
 .paramDrawerGenerate.isStopAction {
   border-color: color-mix(in srgb, #b22732 44%, var(--studio-border)) !important;
@@ -8732,6 +8787,95 @@ label span,
 
 .composerGenerationCard .generationTimingPanel {
   margin: 0;
+}
+
+.composerQueuePanel {
+  width: min(760px, 100%);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--studio-primary) 18%, var(--studio-border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 82%, transparent);
+}
+
+.composerQueueHead,
+.composerQueueItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.composerQueueHead strong {
+  color: var(--studio-text-strong);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.composerQueueHead span {
+  margin-left: auto;
+  color: var(--studio-muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.composerQueueList {
+  display: grid;
+  gap: 6px;
+}
+
+.composerQueueItem {
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--studio-surface-soft) 76%, transparent);
+}
+
+.composerQueueItem b,
+.composerQueueItem span {
+  flex: 0 0 auto;
+  color: var(--studio-primary);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.composerQueueItem span {
+  color: var(--studio-muted);
+}
+
+.composerQueueItem.running span {
+  color: var(--studio-primary);
+}
+
+.composerQueueItem.failed span {
+  color: #b7791f;
+}
+
+.composerQueueItem p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--studio-text);
+  font-size: 11px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerStopAction {
+  min-height: 32px;
+  justify-self: flex-start;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid color-mix(in srgb, #b7791f 30%, var(--studio-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, #fff7ed 72%, var(--studio-surface-strong));
+  color: #8a4b12;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .creationDesk.composerOpen .composerEmptyThread {

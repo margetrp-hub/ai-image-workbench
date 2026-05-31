@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added `SECURITY.md` to clarify supported scope, out-of-scope responsibilities, key handling, stored data, production hardening, and known limits.
+- Added `RELEASE_NOTES.md` with the 0.8 persistence upgrade, deployment impact, verification checklist, and license/security notes.
+- Clarified README review boundaries: the open-source package excludes real keys, the private production gallery, the production home page, and Sub2API backend implementation.
+- Tightened license wording so the MIT license applies to project code, while community prompt templates and third-party content keep their own attribution and licensing requirements.
+- Added Chinese/English UI switching in the lower-left account area and refreshed README screenshots.
+
 ## 0.8.0 - 2026-05-30
 
 - Redesigned the studio around an infinite canvas plus a bottom creation conversation.

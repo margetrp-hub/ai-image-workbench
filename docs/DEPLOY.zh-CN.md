@@ -191,12 +191,12 @@ Remove-Item Env:\SUB2API_BASE_URL,Env:\SUB2API_EMAIL,Env:\SUB2API_PASSWORD
 0.8 推荐链路：
 
 ```text
-文生图：POST /v1/responses，模型使用 gpt-image-2 等图片模型
+文生图：POST /v1/images/generations，模型使用 gpt-image-2 等图片模型
 参考图/Mask：POST /v1/images/edits
 助手对话：POST /v1/chat/completions
 ```
 
-如果你在 Sub2API 后台看到文生图入站和上游都是 `/v1/responses`，模型是 `gpt-image-2`，说明没有走旧的降级链路。
+如果你在 Sub2API 后台看到文生图入站和上游都是 `/v1/images/generations`，模型是 `gpt-image-2`，说明走的是正式图片生成链路。`/v1/responses` 只用于提示词助手或显式开启的兼容测试。
 
 ## 8. 素材库与防爬
 

@@ -16,6 +16,10 @@ const HISTORY_LIMIT = Number(process.env.STUDIO_HISTORY_LIMIT || 200);
 const SESSION_NODE_LIMIT = Number(process.env.STUDIO_SESSION_NODE_LIMIT || 80);
 const SESSION_URL_LIMIT = Number(process.env.STUDIO_SESSION_URL_LIMIT || 24);
 const SESSION_ASSET_ID = 'session-current';
+const JOB_LIMIT = Number(process.env.STUDIO_JOB_LIMIT || 120);
+const JOB_TIMEOUT_MS = Number(process.env.STUDIO_JOB_TIMEOUT_MS || 45 * 60 * 1000);
+const JOB_ACTIVE_STATUSES = new Set(['queued', 'dispatching', 'upstream', 'saving']);
+const SERVICE_STARTED_AT = Date.now();
 const MAX_BODY_BYTES = Number(process.env.STUDIO_MAX_BODY_BYTES || 96 * 1024 * 1024);
 const MAX_IMAGE_BYTES = Number(process.env.STUDIO_MAX_IMAGE_BYTES || 32 * 1024 * 1024);
 const ALLOWED_ORIGINS = String(process.env.STUDIO_ALLOWED_ORIGINS || 'http://127.0.0.1:5173,http://localhost:5173')
@@ -235,6 +239,9 @@ const VIDEO_INSPIRATIONS = [
   }
 ];
 
+const jobQueues = new Map();
+const activeJobControllers = new Map();
+
 function sendJson(res, status, payload) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -330,6 +337,7 @@ async function authenticate(req) {
 
 async function ensureUserDirs(auth) {
   await fs.mkdir(path.join(auth.userDir, 'assets'), { recursive: true });
+  await fs.mkdir(path.join(auth.userDir, 'jobs'), { recursive: true });
 }
 
 function recordsPath(auth) {
@@ -338,6 +346,10 @@ function recordsPath(auth) {
 
 function sessionPath(auth) {
   return path.join(auth.userDir, 'session.json');
+}
+
+function jobsPath(auth) {
+  return path.join(auth.userDir, 'jobs.json');
 }
 
 async function readRecords(auth) {
@@ -372,6 +384,71 @@ async function writeSession(auth, session) {
   await fs.writeFile(sessionPath(auth), JSON.stringify(session, null, 2));
 }
 
+function jobRuntimeKey(auth, jobId) {
+  return `${auth.userKey}:${jobId}`;
+}
+
+function isQueuedInMemory(auth, jobId) {
+  const queue = jobQueues.get(auth.userKey);
+  return Boolean(queue?.items?.some((item) => item.jobId === jobId));
+}
+
+function jobIsActiveInMemory(auth, jobId) {
+  return activeJobControllers.has(jobRuntimeKey(auth, jobId)) || isQueuedInMemory(auth, jobId);
+}
+
+function normalizeJobForRead(auth, job) {
+  if (!job || typeof job !== 'object') return null;
+  const status = text(job.status || 'queued', 40);
+  if (JOB_ACTIVE_STATUSES.has(status) && !jobIsActiveInMemory(auth, job.id)) {
+    const updatedAt = Date.parse(job.updatedAt || job.startedAt || job.createdAt || '');
+    if (!Number.isFinite(updatedAt) || updatedAt < SERVICE_STARTED_AT - 1000) {
+      return {
+        ...job,
+        status: 'unknown',
+        stage: 'unknown',
+        updatedAt: new Date().toISOString(),
+        error: {
+          code: 'JOB_RUNTIME_NOT_ATTACHED',
+          message: 'The service restarted or lost the active runner before this job returned a final result.'
+        }
+      };
+    }
+  }
+  return job;
+}
+
+async function readJobs(auth) {
+  try {
+    const raw = await fs.readFile(jobsPath(auth), 'utf8');
+    const parsed = JSON.parse(raw);
+    const jobs = Array.isArray(parsed) ? parsed : [];
+    return jobs.map((job) => normalizeJobForRead(auth, job)).filter(Boolean);
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+async function writeJobs(auth, jobs) {
+  await ensureUserDirs(auth);
+  await fs.writeFile(jobsPath(auth), JSON.stringify(jobs.slice(0, JOB_LIMIT), null, 2));
+}
+
+async function updateJob(auth, jobId, patch) {
+  const jobs = await readJobs(auth);
+  const index = jobs.findIndex((job) => job.id === jobId);
+  if (index < 0) return null;
+  const nextJob = {
+    ...jobs[index],
+    ...patch,
+    updatedAt: new Date().toISOString()
+  };
+  const nextJobs = [nextJob, ...jobs.filter((job) => job.id !== jobId)];
+  await writeJobs(auth, nextJobs);
+  return nextJob;
+}
+
 function text(value, length) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, length);
 }
@@ -397,23 +474,27 @@ function assetExtension(mime) {
   return 'png';
 }
 
-async function storeResultUrl(auth, recordId, value, index) {
-  const raw = String(value || '');
-  if (/^https?:\/\//i.test(raw)) return raw;
-  if (raw.startsWith('/studio-api/history/')) return raw;
-
-  const match = raw.match(/^data:(image\/(?:png|jpeg|webp));base64,([a-zA-Z0-9+/=\s]+)$/);
-  if (!match) return '';
-
-  const buffer = Buffer.from(match[2].replace(/\s+/g, ''), 'base64');
+async function writeAssetBuffer(auth, recordId, buffer, mime, index) {
   if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) return '';
-
-  const ext = assetExtension(match[1]);
+  const ext = assetExtension(mime);
   const assetDir = path.join(auth.userDir, 'assets', recordId);
   await fs.mkdir(assetDir, { recursive: true });
   const fileName = `${index}.${ext}`;
   await fs.writeFile(path.join(assetDir, fileName), buffer);
   return `/studio-api/history/${recordId}/assets/${fileName}`;
+}
+
+async function storeResultUrl(auth, recordId, value, index) {
+  const raw = String(value || '');
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith('/studio-api/history/')) return raw;
+  if (raw.startsWith('/studio-api/generation-jobs/')) return raw;
+
+  const match = raw.match(/^data:(image\/(?:png|jpeg|webp));base64,([a-zA-Z0-9+/=\s]+)$/);
+  if (!match) return '';
+
+  const buffer = Buffer.from(match[2].replace(/\s+/g, ''), 'base64');
+  return writeAssetBuffer(auth, recordId, buffer, match[1], index);
 }
 
 async function storeSessionUrl(auth, value, index) {
@@ -620,6 +701,18 @@ async function sanitizeCanvasNodes(auth, nodes, assetIndex) {
   return result;
 }
 
+function sanitizeCanvasCustomLinks(links) {
+  const source = Array.isArray(links) ? links.slice(0, SESSION_NODE_LIMIT) : [];
+  return source
+    .map((link) => ({
+      id: text(link?.id || randomUUID(), 120),
+      fromId: text(link?.fromId, 120),
+      toId: text(link?.toId, 120),
+      createdAt: link?.createdAt && !Number.isNaN(Date.parse(link.createdAt)) ? link.createdAt : new Date().toISOString()
+    }))
+    .filter((link) => link.fromId && link.toId);
+}
+
 async function pruneSessionAssets(auth, session) {
   const assetDir = path.join(auth.userDir, 'assets', SESSION_ASSET_ID);
   const referenced = new Set();
@@ -650,7 +743,9 @@ async function sanitizeSession(auth, body) {
     videoResults,
     resultBatchMeta: sanitizeSessionObject(body.resultBatchMeta),
     canvasNodes,
+    canvasCustomLinks: sanitizeCanvasCustomLinks(body.canvasCustomLinks),
     selectedCanvasNodeId: text(body.selectedCanvasNodeId, 120),
+    canvasEditorNodeId: text(body.canvasEditorNodeId, 120),
     canvasView: sanitizeCanvasView(body.canvasView),
     status: text(body.status || 'idle', 40),
     message: text(body.message, 1000),
@@ -685,6 +780,383 @@ async function sanitizeRecord(auth, body) {
     resultUrls,
     case: sanitizeCase(body.case)
   };
+}
+
+function cleanJobId(value) {
+  const raw = String(value || '');
+  return /^[a-zA-Z0-9_-]{8,100}$/.test(raw) ? raw : randomUUID();
+}
+
+function normalizeGatewayBaseUrl(value) {
+  const raw = String(value || SUB2API_BASE_URL).replace(/\/+$/, '');
+  if (raw.endsWith('/v1')) return raw;
+  return `${raw}/v1`;
+}
+
+function dataUrlToBuffer(value) {
+  const raw = String(value || '');
+  const match = raw.match(/^data:(image\/(?:png|jpeg|webp));base64,([a-zA-Z0-9+/=\s]+)$/);
+  if (!match) return null;
+  const buffer = Buffer.from(match[2].replace(/\s+/g, ''), 'base64');
+  if (!buffer.length || buffer.length > MAX_IMAGE_BYTES) return null;
+  return {
+    mime: match[1],
+    buffer,
+    ext: assetExtension(match[1])
+  };
+}
+
+function normalizeImageInput(value, index) {
+  if (!value) return null;
+  const dataUrl = typeof value === 'string' ? value : value.dataUrl;
+  const parsed = dataUrlToBuffer(dataUrl);
+  if (!parsed) return null;
+  return {
+    ...parsed,
+    name: text(value.name || `reference-${index + 1}.${parsed.ext}`, 120)
+  };
+}
+
+function gatewayErrorMessage(error) {
+  const payload = error?.payload || {};
+  const message = payload?.error?.message || payload?.message || error?.message || 'GENERATION_JOB_FAILED';
+  return String(message).slice(0, 1200);
+}
+
+function gatewayRequestId(payload, headers) {
+  return text(
+    payload?.request_id
+    || payload?.id
+    || payload?.error?.request_id
+    || payload?.error?.requestId
+    || headers?.get?.('x-request-id')
+    || headers?.get?.('openai-request-id')
+    || '',
+    180
+  );
+}
+
+async function readGatewayResponse(response) {
+  const raw = await response.text();
+  let payload = {};
+  try {
+    payload = raw ? JSON.parse(raw) : {};
+  } catch {
+    payload = { message: raw.slice(0, 1200) };
+  }
+  if (!response.ok) {
+    const error = new Error(payload?.error?.message || payload?.message || `GATEWAY_HTTP_${response.status}`);
+    error.status = response.status;
+    error.payload = payload;
+    error.requestId = gatewayRequestId(payload, response.headers);
+    throw error;
+  }
+  return payload;
+}
+
+async function persistRemoteImage(auth, recordId, rawUrl, index) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60 * 1000);
+  try {
+    const response = await fetch(rawUrl, { signal: controller.signal });
+    if (!response.ok) return rawUrl;
+    const mime = String(response.headers.get('content-type') || 'image/png').split(';')[0].trim().toLowerCase();
+    if (!/^image\/(png|jpeg|webp)$/.test(mime)) return rawUrl;
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return await writeAssetBuffer(auth, recordId, buffer, mime, index) || rawUrl;
+  } catch {
+    return rawUrl;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function persistGatewayImage(auth, recordId, item, index, outputFormat = 'png') {
+  const url = String(item?.url || item?.image_url || '').trim();
+  if (item?.b64_json || item?.image_base64) {
+    const mime = outputFormat === 'jpeg'
+      ? 'image/jpeg'
+      : outputFormat === 'webp'
+        ? 'image/webp'
+        : 'image/png';
+    const buffer = Buffer.from(String(item.b64_json || item.image_base64).replace(/\s+/g, ''), 'base64');
+    return writeAssetBuffer(auth, recordId, buffer, mime, index);
+  }
+  if (url.startsWith('data:')) {
+    return storeResultUrl(auth, recordId, url, index);
+  }
+  if (/^https?:\/\//i.test(url)) {
+    return persistRemoteImage(auth, recordId, url, index);
+  }
+  return '';
+}
+
+function buildJobRecord(body) {
+  const request = body?.request && typeof body.request === 'object' ? body.request : body;
+  const mode = ['edit', 'mask'].includes(request.mode) ? request.mode : 'image';
+  const route = mode === 'image' && request.route !== 'edits' ? 'generations' : 'edits';
+  const count = Math.max(1, Math.min(4, Number(request.n || request.count || 1)));
+  const now = new Date().toISOString();
+  return {
+    id: cleanJobId(request.id || body.id),
+    clientRequestId: cleanJobId(request.clientRequestId || body.clientRequestId),
+    sessionId: text(request.sessionId || body.sessionId, 120),
+    parentCanvasNodeId: text(request.parentCanvasNodeId || body.parentCanvasNodeId, 120),
+    status: 'queued',
+    stage: 'queued',
+    createdAt: now,
+    updatedAt: now,
+    startedAt: '',
+    completedAt: '',
+    mode,
+    route,
+    endpoint: route === 'edits' ? '/v1/images/edits' : '/v1/images/generations',
+    model: text(request.model, 160),
+    prompt: text(request.prompt, 12000),
+    generationPrompt: text(request.generationPrompt || request.prompt, 12000),
+    size: text(request.size || 'auto', 40),
+    quality: text(request.quality || 'auto', 40),
+    outputFormat: text(request.outputFormat || request.output_format || 'png', 20),
+    moderation: text(request.moderation || 'auto', 40),
+    count,
+    completed: 0,
+    total: count,
+    resultUrls: [],
+    usage: null,
+    error: null,
+    requestIds: [],
+    timing: {
+      queuedAt: Date.now(),
+      startedAt: null,
+      completedAt: null,
+      totalMs: null
+    },
+    inputSummary: {
+      referenceCount: Array.isArray(body.images) ? body.images.length : 0,
+      hasMask: Boolean(body.mask)
+    }
+  };
+}
+
+function buildJobRuntime(body) {
+  const request = body?.request && typeof body.request === 'object' ? body.request : body;
+  const apiKey = text(body.apiKey || request.apiKey, 4000);
+  if (!apiKey) {
+    const error = new Error('GENERATION_JOB_API_KEY_REQUIRED');
+    error.status = 400;
+    throw error;
+  }
+  return {
+    apiKey,
+    gatewayBaseUrl: normalizeGatewayBaseUrl(body.gatewayBaseUrl || request.gatewayBaseUrl || SUB2API_BASE_URL),
+    images: (Array.isArray(body.images) ? body.images : []).slice(0, 4).map(normalizeImageInput).filter(Boolean),
+    mask: body.mask ? normalizeImageInput(body.mask, 0) : null
+  };
+}
+
+async function writeHistoryRecordForJob(auth, job) {
+  if (!Array.isArray(job.resultUrls) || !job.resultUrls.length) return;
+  const records = await readRecords(auth);
+  const record = {
+    id: job.id,
+    sessionId: job.sessionId,
+    createdAt: job.createdAt,
+    mode: job.mode,
+    prompt: job.prompt,
+    model: job.model,
+    size: job.size,
+    quality: job.quality,
+    count: job.count,
+    resultUrls: job.resultUrls,
+    case: null
+  };
+  await writeRecords(auth, [record, ...records.filter((item) => item.id !== record.id)].slice(0, HISTORY_LIMIT));
+}
+
+async function postJsonToGateway(url, apiKey, body, clientRequestId, signal) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'X-Client-Request-ID': clientRequestId,
+      'X-Request-ID': clientRequestId
+    },
+    body: JSON.stringify(body),
+    signal
+  });
+  return readGatewayResponse(response);
+}
+
+async function postMultipartToGateway(url, apiKey, form, clientRequestId, signal) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'X-Client-Request-ID': clientRequestId,
+      'X-Request-ID': clientRequestId
+    },
+    body: form,
+    signal
+  });
+  return readGatewayResponse(response);
+}
+
+async function runGenerationRequest(auth, job, runtime, signal) {
+  const resultUrls = [];
+  const requestIds = [];
+  const total = Math.max(1, Number(job.count || 1));
+  if (job.route === 'edits') {
+    const form = new FormData();
+    form.set('model', job.model);
+    form.set('prompt', job.generationPrompt || job.prompt);
+    form.set('size', job.size);
+    form.set('quality', job.quality);
+    form.set('output_format', job.outputFormat || 'png');
+    form.set('moderation', job.moderation || 'auto');
+    form.set('n', String(total));
+    runtime.images.forEach((image, index) => {
+      form.append('image', new Blob([image.buffer], { type: image.mime }), image.name || `reference-${index + 1}.${image.ext}`);
+    });
+    if (runtime.mask) {
+      form.set('mask', new Blob([runtime.mask.buffer], { type: runtime.mask.mime }), runtime.mask.name || `mask.${runtime.mask.ext}`);
+    }
+    const payload = await postMultipartToGateway(`${runtime.gatewayBaseUrl}/images/edits`, runtime.apiKey, form, job.clientRequestId, signal);
+    const items = Array.isArray(payload?.data) ? payload.data : [];
+    for (let index = 0; index < items.length; index += 1) {
+      const stored = await persistGatewayImage(auth, job.id, items[index], resultUrls.length, job.outputFormat);
+      if (stored) resultUrls.push(stored);
+    }
+    requestIds.push(gatewayRequestId(payload));
+    return { resultUrls, requestIds, usage: payload?.usage || null };
+  }
+
+  for (let index = 0; index < total; index += 1) {
+    const payload = await postJsonToGateway(`${runtime.gatewayBaseUrl}/images/generations`, runtime.apiKey, {
+      model: job.model,
+      prompt: job.generationPrompt || job.prompt,
+      size: job.size,
+      quality: job.quality,
+      n: 1
+    }, `${job.clientRequestId}-${index + 1}`, signal);
+    const items = Array.isArray(payload?.data) ? payload.data : [];
+    if (!items.length) {
+      const error = new Error('IMAGES_GENERATIONS_RETURNED_NO_IMAGES');
+      error.payload = payload;
+      throw error;
+    }
+    for (const item of items) {
+      const stored = await persistGatewayImage(auth, job.id, item, resultUrls.length, job.outputFormat);
+      if (stored) resultUrls.push(stored);
+    }
+    requestIds.push(gatewayRequestId(payload));
+    await updateJob(auth, job.id, {
+      status: 'upstream',
+      stage: 'upstream',
+      completed: Math.min(resultUrls.length, total),
+      resultUrls,
+      requestIds: requestIds.filter(Boolean)
+    });
+  }
+  return { resultUrls, requestIds, usage: null };
+}
+
+async function runGenerationJob(auth, jobId, runtime) {
+  const existingJobs = await readJobs(auth);
+  const existingJob = existingJobs.find((job) => job.id === jobId);
+  if (!existingJob || existingJob.status === 'canceled') return;
+
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const key = jobRuntimeKey(auth, jobId);
+  activeJobControllers.set(key, controller);
+  const timer = setTimeout(() => controller.abort(new Error('JOB_TIMEOUT')), JOB_TIMEOUT_MS);
+  try {
+    let job = await updateJob(auth, jobId, {
+      status: 'dispatching',
+      stage: 'dispatching',
+      startedAt: new Date(startedAt).toISOString(),
+      timing: {
+        queuedAt: null,
+        startedAt,
+        completedAt: null,
+        totalMs: null
+      }
+    });
+    if (!job) return;
+    job = await updateJob(auth, jobId, {
+      status: 'upstream',
+      stage: 'upstream'
+    });
+    const result = await runGenerationRequest(auth, job, runtime, controller.signal);
+    const completedAt = Date.now();
+    const nextJob = await updateJob(auth, jobId, {
+      status: 'succeeded',
+      stage: 'succeeded',
+      completedAt: new Date(completedAt).toISOString(),
+      completed: result.resultUrls.length,
+      total: Math.max(Number(job.count || 1), result.resultUrls.length),
+      resultUrls: result.resultUrls,
+      usage: result.usage,
+      requestIds: result.requestIds.filter(Boolean),
+      timing: {
+        startedAt,
+        completedAt,
+        totalMs: completedAt - startedAt
+      },
+      error: null
+    });
+    if (nextJob) await writeHistoryRecordForJob(auth, nextJob);
+  } catch (error) {
+    const completedAt = Date.now();
+    const reason = String(controller.signal.reason?.message || '');
+    const timedOut = controller.signal.aborted && reason.includes('JOB_TIMEOUT');
+    const canceled = controller.signal.aborted && reason.includes('JOB_CANCELED');
+    await updateJob(auth, jobId, {
+      status: timedOut ? 'unknown' : canceled ? 'canceled' : 'failed',
+      stage: timedOut ? 'unknown' : canceled ? 'canceled' : 'failed',
+      completedAt: new Date(completedAt).toISOString(),
+      timing: {
+        startedAt,
+        completedAt,
+        totalMs: completedAt - startedAt
+      },
+      error: {
+        code: timedOut ? 'JOB_TIMEOUT' : canceled ? 'JOB_CANCELED' : (error?.status ? `HTTP_${error.status}` : 'GENERATION_JOB_FAILED'),
+        status: error?.status || null,
+        requestId: error?.requestId || gatewayRequestId(error?.payload || {}),
+        message: timedOut
+          ? 'The server stopped waiting for this generation job. The upstream request may still finish or bill.'
+          : canceled
+            ? 'The queued or running job was canceled locally. If it already reached the upstream, the upstream may still finish or bill.'
+          : gatewayErrorMessage(error)
+      }
+    });
+  } finally {
+    clearTimeout(timer);
+    activeJobControllers.delete(key);
+  }
+}
+
+function enqueueGenerationJob(auth, job, runtime) {
+  const queue = jobQueues.get(auth.userKey) || { running: false, items: [] };
+  queue.items.push({ auth, jobId: job.id, runtime });
+  jobQueues.set(auth.userKey, queue);
+  setTimeout(() => drainGenerationQueue(auth.userKey), 0);
+}
+
+async function drainGenerationQueue(userKey) {
+  const queue = jobQueues.get(userKey);
+  if (!queue || queue.running) return;
+  queue.running = true;
+  try {
+    while (queue.items.length) {
+      const item = queue.items.shift();
+      await runGenerationJob(item.auth, item.jobId, item.runtime);
+    }
+  } finally {
+    queue.running = false;
+  }
 }
 
 async function removeRecordAssets(auth, recordId) {
@@ -767,12 +1239,12 @@ async function handler(req, res) {
     return sendJson(res, 403, { ok: false, error: 'ORIGIN_NOT_ALLOWED' });
   }
 
-  const { parts } = parseRoute(req);
+  const { url, parts } = parseRoute(req);
   if (parts.join('/') === 'studio-api/health') {
     return sendJson(res, 200, { ok: true });
   }
 
-  if (parts[0] !== 'studio-api' || !['history', 'session', 'library', 'library-assets', 'prompt-presets', 'video-inspirations'].includes(parts[1])) {
+  if (parts[0] !== 'studio-api' || !['history', 'session', 'generation-jobs', 'library', 'library-assets', 'prompt-presets', 'video-inspirations'].includes(parts[1])) {
     return sendJson(res, 404, { ok: false, error: 'NOT_FOUND' });
   }
 
@@ -795,6 +1267,62 @@ async function handler(req, res) {
       await fs.rm(sessionPath(auth), { force: true });
       await fs.rm(path.join(auth.userDir, 'assets', SESSION_ASSET_ID), { recursive: true, force: true });
       return sendJson(res, 200, { ok: true });
+    }
+
+    if (req.method === 'GET' && parts[0] === 'studio-api' && parts[1] === 'generation-jobs' && parts.length === 2) {
+      const sessionId = text(url.searchParams.get('sessionId'), 120);
+      const limit = Math.max(1, Math.min(JOB_LIMIT, Number(url.searchParams.get('limit') || 40)));
+      const jobs = await readJobs(auth);
+      const filtered = sessionId ? jobs.filter((job) => job.sessionId === sessionId) : jobs;
+      return sendJson(res, 200, { ok: true, jobs: filtered.slice(0, limit) });
+    }
+
+    if (req.method === 'POST' && parts[0] === 'studio-api' && parts[1] === 'generation-jobs' && parts.length === 2) {
+      const body = await readJsonBody(req);
+      const job = buildJobRecord(body);
+      const runtime = buildJobRuntime(body);
+      if (job.route === 'edits' && !runtime.images.length) {
+        return sendJson(res, 400, { ok: false, error: 'REFERENCE_IMAGE_REQUIRED' });
+      }
+      const jobs = await readJobs(auth);
+      await writeJobs(auth, [job, ...jobs.filter((item) => item.id !== job.id)].slice(0, JOB_LIMIT));
+      enqueueGenerationJob(auth, job, runtime);
+      return sendJson(res, 202, { ok: true, job });
+    }
+
+    if (req.method === 'GET' && parts[0] === 'studio-api' && parts[1] === 'generation-jobs' && parts.length === 3) {
+      const jobId = cleanJobId(parts[2]);
+      const jobs = await readJobs(auth);
+      const job = jobs.find((item) => item.id === jobId);
+      if (!job) return sendJson(res, 404, { ok: false, error: 'GENERATION_JOB_NOT_FOUND' });
+      return sendJson(res, 200, { ok: true, job });
+    }
+
+    if (req.method === 'DELETE' && parts[0] === 'studio-api' && parts[1] === 'generation-jobs' && parts.length === 3) {
+      const jobId = cleanJobId(parts[2]);
+      const jobs = await readJobs(auth);
+      const currentJob = jobs.find((item) => item.id === jobId);
+      if (!currentJob) return sendJson(res, 404, { ok: false, error: 'GENERATION_JOB_NOT_FOUND' });
+      if (!JOB_ACTIVE_STATUSES.has(currentJob.status)) {
+        return sendJson(res, 200, { ok: true, job: currentJob });
+      }
+      const key = jobRuntimeKey(auth, jobId);
+      const controller = activeJobControllers.get(key);
+      if (controller) controller.abort(new Error('JOB_CANCELED'));
+      const queue = jobQueues.get(auth.userKey);
+      if (queue?.items?.length) {
+        queue.items = queue.items.filter((item) => item.jobId !== jobId);
+      }
+      const job = await updateJob(auth, jobId, {
+        status: 'canceled',
+        stage: 'canceled',
+        completedAt: new Date().toISOString(),
+        error: {
+          code: 'JOB_CANCELED',
+          message: 'The job was canceled locally.'
+        }
+      });
+      return sendJson(res, 200, { ok: true, job });
     }
 
     if (req.method === 'GET' && parts[0] === 'studio-api' && parts[1] === 'library' && parts.length === 2) {

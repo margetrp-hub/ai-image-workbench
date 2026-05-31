@@ -21,7 +21,7 @@ const envPromptOptimizerModel = import.meta.env.VITE_SUB2API_PROMPT_OPTIMIZER_MO
 
 const providerDefaults = {
   apiKeySource: 'sub2api',
-  route: 'auto',
+  route: normalizeImageRoute(envImageRoute || 'auto'),
   manualApiKey: '',
   manualGatewayBaseUrl: '',
   responsesModel: envResponsesModel,
@@ -56,9 +56,10 @@ function normalizeGatewayBaseUrl(value) {
 
 function normalizeImageRoute(value) {
   const route = String(value || '').toLowerCase();
-  if (route === 'legacy' || route === 'images') return 'legacy';
+  if (route === 'legacy' || route === 'images' || route === 'image' || route === 'generations') return 'legacy';
+  if (route === 'responses') return 'responses';
   if (route === 'auto') return 'auto';
-  return 'responses';
+  return 'auto';
 }
 
 function normalizeApiKeySource(value) {
@@ -169,7 +170,7 @@ function normalizeProviderSettings(value = {}) {
     ...providerDefaults,
     ...value,
     apiKeySource: normalizeApiKeySource(value.apiKeySource),
-    route: normalizeImageRoute(value.route),
+    route: normalizeImageRoute(value.route || providerDefaults.route),
     manualApiKey: String(value.manualApiKey || ''),
     manualGatewayBaseUrl: String(value.manualGatewayBaseUrl || ''),
     responsesModel: normalizeResponsesModel(value.responsesModel),
@@ -811,38 +812,58 @@ export class Sub2ApiClient {
     return created;
   }
 
-  async generateImageViaLegacy({ apiKey, model, prompt, size, quality, outputFormat, moderation, n, gatewayBaseUrl, onProgress, signal }) {
+  async generateImageViaLegacy({ apiKey, model, prompt, size, quality, n, gatewayBaseUrl, onProgress, signal }) {
+    const total = Math.max(1, Number(n || 1));
+    const data = [];
+    const payloads = [];
+    const resolvedGatewayBaseUrl = normalizeGatewayBaseUrl(gatewayBaseUrl || this.gatewayBaseUrl);
     onProgress?.({
       stage: 'request',
       completed: 0,
-      total: Math.max(1, Number(n || 1)),
+      total,
       percent: 12
     });
-    const response = await fetch(`${normalizeGatewayBaseUrl(gatewayBaseUrl || this.gatewayBaseUrl)}/images/generations`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model,
-        prompt,
-        size,
-        quality,
-        output_format: outputFormat,
-        moderation,
-        n
-      }),
-      ...(signal ? { signal } : {})
-    });
-    const payload = await readJsonResponse(response);
+    for (let index = 0; index < total; index += 1) {
+      const response = await fetch(`${resolvedGatewayBaseUrl}/images/generations`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model,
+          prompt,
+          size,
+          quality,
+          n: 1
+        }),
+        ...(signal ? { signal } : {})
+      });
+      const payload = await readJsonResponse(response);
+      payloads.push(payload);
+      const items = Array.isArray(payload?.data) ? payload.data : [];
+      if (!items.length) throw new Error('IMAGES_GENERATIONS_RETURNED_NO_IMAGES');
+      data.push(...items);
+      onProgress?.({
+        stage: 'image',
+        completed: Math.min(data.length, total),
+        total,
+        percent: Math.min(99, Math.max(12, Math.round((Math.min(data.length, total) / total) * 100)))
+      });
+    }
     onProgress?.({
       stage: 'completed',
-      completed: Array.isArray(payload?.data) ? payload.data.length : Math.max(1, Number(n || 1)),
-      total: Math.max(1, Number(n || 1)),
+      completed: data.length,
+      total,
       percent: 100
     });
-    return payload;
+    return {
+      ...(payloads[0] || {}),
+      created: payloads.at(-1)?.created || payloads[0]?.created || Math.floor(Date.now() / 1000),
+      data: data.slice(0, total),
+      usage: payloads.find((payload) => payload?.usage)?.usage,
+      responses: payloads
+    };
   }
 
   async optimizePrompt({ apiKey, prompt, instruction = '', size = '', aspectRatio = '', quality = '', resolutionTier = '', gatewayBaseUrl, model, onPartial, signal }) {
@@ -1313,8 +1334,8 @@ export class Sub2ApiClient {
 
   async generateImage({ apiKey, model, prompt, size, quality, outputFormat, moderation, n, referenceImages, onPartial, onProgress, route, gatewayBaseUrl, responsesModel, partialImages, signal }) {
     const explicitRoute = route === undefined || route === null || route === '' ? '' : route;
-    const imageRoute = normalizeImageRoute(explicitRoute || envImageRoute || 'responses');
-    const effectiveImageRoute = imageRoute === 'auto' ? 'responses' : imageRoute;
+    const imageRoute = normalizeImageRoute(explicitRoute || 'legacy');
+    const effectiveImageRoute = imageRoute === 'auto' ? 'legacy' : imageRoute;
     if (effectiveImageRoute !== 'legacy') {
       try {
         return await this.generateImageViaResponses({
@@ -1493,6 +1514,32 @@ export class StudioHistoryClient {
     await this.request('/session', { method: 'DELETE' });
   }
 
+  async createGenerationJob(job) {
+    const payload = await this.request('/generation-jobs', {
+      method: 'POST',
+      body: JSON.stringify(job)
+    });
+    return payload.job || null;
+  }
+
+  async listGenerationJobs({ sessionId = '', limit = 40 } = {}) {
+    const params = new URLSearchParams();
+    if (sessionId) params.set('sessionId', sessionId);
+    if (limit) params.set('limit', String(limit));
+    const payload = await this.request(`/generation-jobs${params.toString() ? `?${params}` : ''}`);
+    return Array.isArray(payload.jobs) ? payload.jobs : [];
+  }
+
+  async getGenerationJob(jobId) {
+    const payload = await this.request(`/generation-jobs/${encodeURIComponent(jobId)}`);
+    return payload.job || null;
+  }
+
+  async cancelGenerationJob(jobId) {
+    const payload = await this.request(`/generation-jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+    return payload.job || null;
+  }
+
   async saveRecord(record) {
     const payload = await this.request('/history', {
       method: 'POST',
@@ -1511,7 +1558,7 @@ export class StudioHistoryClient {
 
   async resolveAssetUrl(url) {
     const value = String(url || '');
-    if (!value.startsWith('/studio-api/history/')) return value;
+    if (!value.startsWith('/studio-api/history/') && !value.startsWith('/studio-api/generation-jobs/')) return value;
     if (!this.session?.accessToken) return value;
 
     const response = await fetch(`${this.baseUrl}${value}`, {

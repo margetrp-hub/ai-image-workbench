@@ -18,15 +18,17 @@ Demo: [studio.ohlaoo.com/studio/](https://studio.ohlaoo.com/studio/)
 
 ## What 0.8 Does
 
-- Image generation uses `/v1/responses` by default. Image models such as `gpt-image-2` are called directly instead of falling back to a text model plus an `image_generation` tool.
+- Image generation uses `/v1/images/generations` by default and calls image models such as `gpt-image-2` directly, avoiding accidental `/v1/responses` fallback paths.
 - Reference-image editing and mask redraw use `/v1/images/edits`.
 - The bottom creation conversation can call a chat model to refine prompts and uses the current Sub2API key quota.
 - Selecting a canvas node and generating again keeps #1 -> #2 / #3 lineage.
 - The prompt assistant respects directions such as derive, local edit, rewrite, remove, and replace; it should not reintroduce details the user has rejected.
 - Current canvas sessions are saved through `/studio-api/session`, isolated by the authenticated Sub2API user.
+- Authenticated image requests are submitted to `/studio-api/generation-jobs`; the server then calls `/v1/images/generations` or `/v1/images/edits`, stores the result assets, and lets the canvas/history recover after refresh.
 - Timeout, stop, and network interruption states are shown as pending review when the upstream request may still be processing or charged.
 - The history gallery is grouped by creation session, while the left project list no longer splits one session into one project per image.
 - Sub2API keys are masked in the UI.
+- The lower-left account area includes Chinese/English UI switching and light/dark theme controls.
 - Starter prompt and inspiration data can remain static for demos, or move behind `/studio-api/library` for protected production deployments.
 
 ## Screenshots
@@ -56,6 +58,14 @@ Sub2API owns accounts, keys, quota, models, billing, and OpenAI-compatible gatew
 `image-sub2api-studio` owns the creation UI: prompts, reference upload, parameter controls, infinite canvas, canvas continuation, history gallery, current-session persistence, and deployment samples.
 
 Community prompt templates are used as learning/reference material. Where applicable, prompt template content follows `CC BY 4.0`; keep attribution to original authors or sources when using or adapting it. See [Acknowledgements and Reference Boundaries](docs/ACKNOWLEDGEMENTS.md).
+
+## Review and Security Boundary
+
+The open-source package does not include real API keys, the private production image library, the production home page, or Sub2API's backend implementation. A production deployment should connect this studio to an existing Sub2API gateway and configure Nginx, Docker, HTTPS, and persistent storage explicitly.
+
+- Security boundary, key handling, stored data, and production hardening notes: [SECURITY.md](SECURITY.md).
+- 0.8 release notes, migration impact, and verification checklist: [RELEASE_NOTES.md](RELEASE_NOTES.md).
+- Source-code license scope: [LICENSE](LICENSE). Community prompt templates and third-party content are not automatically relicensed as MIT code.
 
 ## Local Run
 
@@ -115,8 +125,8 @@ Notes:
 
 - `VITE_SUB2API_BASE_URL` is normalized to `/api/v1` for login, profile, and key-list APIs.
 - `VITE_SUB2API_GATEWAY_BASE_URL` is normalized to `/v1` for model and generation routes.
-- `VITE_SUB2API_IMAGE_ROUTE=auto` is the recommended mode for this release: text-to-image uses `/v1/responses`, while reference image and Mask flows use `/v1/images/edits`.
-- `legacy` is kept only for `/v1/images/generations` compatibility.
+- `VITE_SUB2API_IMAGE_ROUTE=auto` is the recommended mode for this release: text-to-image uses `/v1/images/generations`, while reference image and Mask flows use `/v1/images/edits`.
+- Set it to `responses` only when your upstream explicitly supports image generation through `/v1/responses` and you want to test that path.
 - Set `VITE_STUDIO_LIBRARY_AUTH_REQUIRED=true` only after the authenticated `/studio-api/library` service is available.
 
 ## VPS Layout
@@ -136,6 +146,8 @@ More details:
 - [Deployment guide](docs/DEPLOY.zh-CN.md)
 - [Docker production guide](docs/DOCKER.zh-CN.md)
 - [Server update guide](deploy/UPDATE-SERVER.zh-CN.md)
+- [Security boundary](SECURITY.md)
+- [Release notes](RELEASE_NOTES.md)
 
 If the server already has an image library, normal front-end updates do not need the image library again:
 
@@ -150,9 +162,39 @@ This command creates:
 
 For 0.8, upload the service package when using current-session persistence, refresh recovery, or the history gallery service.
 
+## Docker Deployment
+
+The repository also includes a Docker Compose deployment for a fresh server or open-source users:
+
+```bash
+cp .env.example .env
+docker compose up --build -d
+```
+
+It starts two containers:
+
+- `studio-web`: Nginx static front-end plus same-origin proxy.
+- `studio-history`: Node persistence service for the history gallery, current session, and generated assets.
+
+Persistent data lives in the `studio-data` volume. Rebuilding images keeps the gallery and current canvas as long as you do not run `docker compose down -v`.
+
+If Sub2API runs on the host at `127.0.0.1:8080`, keep:
+
+```env
+SUB2API_UPSTREAM=http://host.docker.internal:8080
+```
+
+If Sub2API is a remote domain, set:
+
+```env
+SUB2API_UPSTREAM=https://your-sub2api-domain
+```
+
+See [Docker production guide](docs/DOCKER.zh-CN.md) for the full deployment path.
+
 ## Asset Library Strategy
 
-Anything already loaded by front-end code can be inspected in the browser. For production deployments where prompts and assets should not be scraped, I recommend:
+Anything already loaded by front-end code can be inspected in the browser. For production deployments where prompts and assets should not be scraped, recommended practice is:
 
 - Keep the GitHub repository lightweight and do not include the full private gallery.
 - Serve private prompts and assets through `/studio-api/library` after login.
@@ -197,6 +239,8 @@ This checks login, profile, and key-list behavior. It does not start paid genera
 │   ├── sub2api-studio-overlay.md
 │   ├── templates.md
 │   └── screenshots/
+├── SECURITY.md                           # Security boundary and production hardening notes
+├── RELEASE_NOTES.md                      # Current release notes
 ├── public/
 │   ├── cases.json
 │   ├── inspirations.json
@@ -209,4 +253,4 @@ This checks login, profile, and key-list behavior. It does not start paid genera
 
 Maintainer: [@margetrp-hub](https://github.com/margetrp-hub)
 
-Code is released under the [MIT License](LICENSE). Prompt template content comes from community sources and follows `CC BY 4.0` where applicable.
+Code is released under the [MIT License](LICENSE). Community prompt templates follow `CC BY 4.0` where applicable; third-party dependencies, prompt sources, and user-provided asset libraries keep their own licenses or service terms.
