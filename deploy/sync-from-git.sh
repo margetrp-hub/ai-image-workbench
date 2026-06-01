@@ -187,7 +187,15 @@ echo "css: ${ASSET_CSS:-none}"
 
 info "Verify service"
 systemctl is-active --quiet "$SERVICE_NAME" || die "$SERVICE_NAME is not active"
-curl -fsS "$HEALTH_URL" >/dev/null || die "Health check failed: $HEALTH_URL"
+for attempt in $(seq 1 20); do
+  if curl -fsS "$HEALTH_URL" >/dev/null; then
+    break
+  fi
+  if [ "$attempt" = "20" ]; then
+    die "Health check failed: $HEALTH_URL"
+  fi
+  sleep 1
+done
 echo "health: ok"
 
 info "Verify protected data"
