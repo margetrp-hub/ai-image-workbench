@@ -4226,6 +4226,10 @@ label span,
   font-weight: 900;
 }
 
+html[lang="en"] .promptTools::before {
+  content: "Prompt";
+}
+
 .instructionField {
   gap: 0;
 }
@@ -4523,6 +4527,10 @@ label span,
   color: var(--studio-text-strong);
   font-size: 13px;
   font-weight: 900;
+}
+
+html[lang="en"] .bottomComposerBar::before {
+  content: "AI refine";
 }
 
 .bottomComposerBar span {
@@ -5200,6 +5208,11 @@ label span,
 .creationDesk .bottomComposerBar::before {
   content: "会话";
   min-width: 30px;
+}
+
+html[lang="en"] .bottomComposerBar::before,
+html[lang="en"] .creationDesk .bottomComposerBar::before {
+  content: "Chat";
 }
 
 .bottomComposerBar span,
@@ -5994,12 +6007,24 @@ label span,
   font-weight: 950;
 }
 
+html[lang="en"] .bottomComposerToggle::before {
+  content: "Hide";
+}
+
 .bottomComposerToggle.isOpen::before {
   content: "收起";
 }
 
+html[lang="en"] .bottomComposerToggle.isOpen::before {
+  content: "Hide";
+}
+
 .bottomComposerToggle.isClosed::before {
   content: "展开";
+}
+
+html[lang="en"] .bottomComposerToggle.isClosed::before {
+  content: "Open";
 }
 
 .creationDesk .bottomComposerBar {

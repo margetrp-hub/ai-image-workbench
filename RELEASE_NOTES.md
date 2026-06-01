@@ -1,5 +1,13 @@
 # Release Notes
 
+## 0.8.1
+
+This is a small repair release after the first 0.8 deployment.
+
+- The language switch now covers the visible canvas controls, reference panel, bottom creation conversation, and parameter rail instead of only the outer shell.
+- Current-session recovery now handles old cached `blob:` image URLs by falling back to the persisted `/studio-api/history/.../assets/...` URL, then resolving it through the authenticated asset fetch path.
+- The release was verified with a browser language-switch smoke test and a persisted-asset recovery test.
+
 ## 0.8.0
 
 `0.8.0` turns `image-sub2api-studio` from a single-page image tool into a more complete Sub2API creation workstation.

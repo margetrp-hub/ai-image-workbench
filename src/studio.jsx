@@ -419,7 +419,7 @@ function loadCurrentSession() {
   try {
     const session = JSON.parse(localStorage.getItem(CURRENT_SESSION_KEY) || 'null');
     if (!session || typeof session !== 'object') return null;
-    return session;
+    return normalizeCachedCurrentSession(session);
   } catch {
     return null;
   }
@@ -427,7 +427,7 @@ function loadCurrentSession() {
 
 function saveCurrentSession(session) {
   const nextSession = {
-    ...session,
+    ...(normalizeCachedCurrentSession(session) || session),
     updatedAt: new Date().toISOString()
   };
   try {
@@ -452,13 +452,12 @@ function sessionUrlForServer(url, persistedUrl) {
   return value;
 }
 
-function prepareCurrentSessionForServer(session) {
+function normalizeCachedCurrentSession(session) {
   if (!session || typeof session !== 'object') return null;
   const persistedResults = Array.isArray(session.persistedResults) ? session.persistedResults : [];
   const persistedVideoResults = Array.isArray(session.persistedVideoResults) ? session.persistedVideoResults : [];
-  const { persistedResults: _persistedResults, persistedVideoResults: _persistedVideoResults, ...rest } = session;
   return {
-    ...rest,
+    ...session,
     results: Array.isArray(session.results)
       ? session.results.map((url, index) => sessionUrlForServer(url, persistedResults[index]))
       : [],
@@ -466,7 +465,30 @@ function prepareCurrentSessionForServer(session) {
       ? session.videoResults.map((url, index) => sessionUrlForServer(url, persistedVideoResults[index]))
       : [],
     canvasNodes: Array.isArray(session.canvasNodes)
-      ? session.canvasNodes.map(({ persistedUrl, ...node }) => ({
+      ? session.canvasNodes.map((node) => ({
+        ...node,
+        url: sessionUrlForServer(node?.url, node?.persistedUrl)
+      }))
+      : []
+  };
+}
+
+function prepareCurrentSessionForServer(session) {
+  if (!session || typeof session !== 'object') return null;
+  const normalized = normalizeCachedCurrentSession(session);
+  const persistedResults = Array.isArray(normalized.persistedResults) ? normalized.persistedResults : [];
+  const persistedVideoResults = Array.isArray(normalized.persistedVideoResults) ? normalized.persistedVideoResults : [];
+  const { persistedResults: _persistedResults, persistedVideoResults: _persistedVideoResults, ...rest } = normalized;
+  return {
+    ...rest,
+    results: Array.isArray(normalized.results)
+      ? normalized.results.map((url, index) => sessionUrlForServer(url, persistedResults[index]))
+      : [],
+    videoResults: Array.isArray(normalized.videoResults)
+      ? normalized.videoResults.map((url, index) => sessionUrlForServer(url, persistedVideoResults[index]))
+      : [],
+    canvasNodes: Array.isArray(normalized.canvasNodes)
+      ? normalized.canvasNodes.map(({ persistedUrl, ...node }) => ({
         ...node,
         url: sessionUrlForServer(node.url, persistedUrl)
       }))
@@ -3207,20 +3229,32 @@ function CreationDesk({
   }, [remoteSession?.updatedAt]);
 
   useEffect(() => {
-    const protectedNodes = canvasNodes.filter((node) => String(node?.url || '').startsWith('/studio-api/history/'));
+    const protectedAssetUrl = (node) => {
+      const url = String(node?.url || '');
+      const persistedUrl = String(node?.persistedUrl || '');
+      if (url.startsWith('/studio-api/history/') || url.startsWith('/studio-api/generation-jobs/')) return url;
+      if (url.startsWith('blob:') && (persistedUrl.startsWith('/studio-api/history/') || persistedUrl.startsWith('/studio-api/generation-jobs/'))) return persistedUrl;
+      return '';
+    };
+    const protectedNodes = canvasNodes
+      .map((node) => ({ node, assetUrl: protectedAssetUrl(node) }))
+      .filter((item) => item.assetUrl);
     if (!protectedNodes.length || !isAuthenticated) return;
     let cancelled = false;
     const historyClient = new StudioHistoryClient({ session: loadSession() });
-    Promise.all(protectedNodes.map(async (node) => ({
+    Promise.all(protectedNodes.map(async ({ node, assetUrl }) => ({
       id: node.id,
-      url: await historyClient.resolveAssetUrl(node.url).catch(() => node.url)
+      persistedUrl: assetUrl,
+      url: await historyClient.resolveAssetUrl(assetUrl).catch(() => assetUrl)
     }))).then((resolved) => {
       if (cancelled) return;
-      const resolvedMap = new Map(resolved.filter((item) => item.url && !String(item.url).startsWith('/studio-api/history/')).map((item) => [item.id, item.url]));
+      const resolvedMap = new Map(resolved
+        .filter((item) => item.url && !String(item.url).startsWith('/studio-api/'))
+        .map((item) => [item.id, item]));
       if (!resolvedMap.size) return;
       setCanvasNodes((current) => current.map((node) => (
         resolvedMap.has(node.id)
-          ? { ...node, persistedUrl: node.persistedUrl || node.url, url: resolvedMap.get(node.id) }
+          ? { ...node, persistedUrl: node.persistedUrl || resolvedMap.get(node.id).persistedUrl, url: resolvedMap.get(node.id).url }
           : node
       )));
     });
@@ -5045,21 +5079,21 @@ function CreationDesk({
   const maskSourceFile = referenceFiles[0] || (maskSourcePreview ? { name: selectedCanvasNode ? `#${selectedCanvasNode.canvasIndex || 1}.png` : 'reference.png' } : null);
   const composerUsesEditRoute = mode === 'mask' || (mode === 'edit' && (referenceFiles.length || selectedCanvasNode?.url));
   const composerRouteLabel = mode === 'video'
-    ? '视频任务接口'
+    ? t('composer.routeVideo', '视频任务接口')
     : composerUsesEditRoute
       ? '/v1/images/edits'
       : '/v1/images/generations';
   const composerContextTitle = selectedCanvasNode
-    ? `基于 #${selectedCanvasNode.canvasIndex || ''} 继续创作`
+    ? t('composer.contextContinue', '基于 #{index} 继续创作', { index: selectedCanvasNode.canvasIndex || '' })
     : selectedCase?.title
-      ? `来自模板：${selectedCase.title}`
-      : '新的创作会话';
+      ? t('composer.contextTemplate', '来自模板：{title}', { title: selectedCase.title })
+      : t('composer.contextNew', '新的创作会话');
   const composerContextMeta = selectedCanvasNode
     ? composerUsesEditRoute
-      ? '当前会把选中图片作为参考图'
-      : '当前只继承提示词和画布关系'
+      ? t('composer.contextUsesReference', '当前会把选中图片作为参考图')
+      : t('composer.contextLineageOnly', '当前只继承提示词和画布关系')
     : mode === 'video'
-      ? '视频参数在右侧设置'
+      ? t('composer.contextVideo', '视频参数在右侧设置')
       : t('composer.title', '把想法说出来，先整理，再生成');
   const composerGenerationVisible = status === 'loading' || status === 'success' || progress.stage === 'failed' || progress.stage === 'pending_review' || Boolean(message);
   const composerQuickRecipes = CREATIVE_RECIPES.slice(0, 5);
@@ -5178,16 +5212,16 @@ function CreationDesk({
                   className="canvasPort canvasPortIn"
                   data-node-id={node.id}
                   onPointerDown={(event) => finishCanvasLink(event, node)}
-                  aria-label={`连接到 #${node.canvasIndex || ''}`}
-                  title="连接到这张图"
+                  aria-label={`${t('canvas.connectTo', '连接到这张图')} #${node.canvasIndex || ''}`}
+                  title={t('canvas.connectTo', '连接到这张图')}
                 />
                 <button
                   type="button"
                   className="canvasPort canvasPortOut"
                   data-node-id={node.id}
                   onPointerDown={(event) => startCanvasLink(event, node)}
-                  aria-label={`从 #${node.canvasIndex || ''} 开始连线`}
-                  title="拖到另一张图建立关联"
+                  aria-label={`${t('canvas.dragConnect', '拖到另一张图建立关联')} #${node.canvasIndex || ''}`}
+                  title={t('canvas.dragConnect', '拖到另一张图建立关联')}
                 />
                 <button
                   type="button"
@@ -5213,7 +5247,7 @@ function CreationDesk({
                         }}
                       />
                       <span className="canvasNodeMissing">
-                        图片正在恢复，若仍为空请从历史图库重新打开本次会话
+                        {t('canvas.recovering', '图片正在恢复，若仍为空请从历史图库重新打开本次会话')}
                       </span>
                     </>
                   )}
@@ -5228,52 +5262,52 @@ function CreationDesk({
                   }}
                 >
                   <SquarePen size={13} />
-                  继续优化
+                  {t('canvas.continueEdit', '继续优化')}
                 </button>
                 <div className="canvasNodeToolbar" onClick={(event) => event.stopPropagation()}>
-                  <button type="button" onClick={() => previewCanvasNode(node)} aria-label={`预览 #${node.canvasIndex || ''}`} title="预览">
+                  <button type="button" onClick={() => previewCanvasNode(node)} aria-label={`${t('canvas.preview', '预览')} #${node.canvasIndex || ''}`} title={t('canvas.preview', '预览')}>
                     <Search size={13} />
                   </button>
-                  <button type="button" onClick={() => openCanvasEditor(node)} aria-label={`继续优化 #${node.canvasIndex || ''}`} title="继续优化">
+                  <button type="button" onClick={() => openCanvasEditor(node)} aria-label={`${t('canvas.continueEdit', '继续优化')} #${node.canvasIndex || ''}`} title={t('canvas.continueEdit', '继续优化')}>
                     <SquarePen size={13} />
                   </button>
                   {node.kind !== 'video' ? (
-                    <button type="button" onClick={() => setCanvasNodeAsReference(node)} aria-label={`设为参考 #${node.canvasIndex || ''}`} title="设为参考">
+                    <button type="button" onClick={() => setCanvasNodeAsReference(node)} aria-label={`${t('canvas.setReference', '设为参考')} #${node.canvasIndex || ''}`} title={t('canvas.setReference', '设为参考')}>
                       <ImageIcon size={13} />
                     </button>
                   ) : null}
-                  <button type="button" onClick={() => copyCanvasNodePrompt(node)} disabled={!node.prompt} aria-label={`复制提示词 #${node.canvasIndex || ''}`} title="复制提示词">
+                  <button type="button" onClick={() => copyCanvasNodePrompt(node)} disabled={!node.prompt} aria-label={`${t('canvas.copyPrompt', '复制提示词')} #${node.canvasIndex || ''}`} title={t('canvas.copyPrompt', '复制提示词')}>
                     <Copy size={13} />
                   </button>
-                  <a href={displayResultUrl(node.url)} download={nodeDownloadName} aria-label={`下载 #${node.canvasIndex || ''}`} title="下载">
+                  <a href={displayResultUrl(node.url)} download={nodeDownloadName} aria-label={`${t('canvas.download', '下载')} #${node.canvasIndex || ''}`} title={t('canvas.download', '下载')}>
                     <Download size={13} />
                   </a>
-                  <button type="button" onClick={() => deleteCanvasNode(node)} aria-label={`删除 #${node.canvasIndex || ''}`} title="删除">
+                  <button type="button" onClick={() => deleteCanvasNode(node)} aria-label={`${t('canvas.delete', '删除')} #${node.canvasIndex || ''}`} title={t('canvas.delete', '删除')}>
                     <Trash2 size={13} />
                   </button>
                 </div>
                 {canvasEditorNodeId === node.id ? (
                   <div className="canvasInlineEditor" onClick={(event) => event.stopPropagation()}>
                     <div className="canvasInlineEditorHead">
-                      <strong>#{node.canvasIndex || ''} 继续优化</strong>
-                      <button type="button" onClick={closeCanvasEditor} aria-label="关闭">
+                      <strong>{t('canvas.inlineContinue', '#{index} 继续优化', { index: node.canvasIndex || '' })}</strong>
+                      <button type="button" onClick={closeCanvasEditor} aria-label={t('settings.close', '关闭')}>
                         <X size={13} />
                       </button>
                     </div>
                     <textarea
                       value={canvasEditorPrompt}
                       onChange={(event) => setCanvasEditorPrompt(event.target.value)}
-                      placeholder="输入这一轮要补充、调整或重绘的地方"
+                      placeholder={t('canvas.inlinePlaceholder', '输入这一轮要补充、调整或重绘的地方')}
                       autoFocus
                     />
-                    <div className="canvasInlineModes" role="group" aria-label="续作方式">
-                      <button type="button" className={canvasEditorMode === 'image' ? 'active' : ''} onClick={() => changeCanvasEditorMode('image')}>衍生</button>
-                      <button type="button" className={canvasEditorMode === 'edit' ? 'active' : ''} onClick={() => changeCanvasEditorMode('edit')}>参考编辑</button>
+                    <div className="canvasInlineModes" role="group" aria-label={t('canvas.continueMode', '续作方式')}>
+                      <button type="button" className={canvasEditorMode === 'image' ? 'active' : ''} onClick={() => changeCanvasEditorMode('image')}>{t('canvas.derive', '衍生')}</button>
+                      <button type="button" className={canvasEditorMode === 'edit' ? 'active' : ''} onClick={() => changeCanvasEditorMode('edit')}>{t('canvas.referenceEdit', '参考编辑')}</button>
                       <button type="button" className={canvasEditorMode === 'mask' ? 'active' : ''} onClick={() => changeCanvasEditorMode('mask')}>Mask</button>
                     </div>
-                    {canvasEditorMode === 'image' ? <p>只继承提示词和画布关系，不把原图作为参考图。</p> : null}
-                    {canvasEditorMode === 'edit' ? <p>会把这张图作为参考图，调用 /v1/images/edits。</p> : null}
-                    {canvasEditorMode === 'mask' ? <p>先在 Mask 面板涂抹要重绘的区域，再用这个节点继续生成。</p> : null}
+                    {canvasEditorMode === 'image' ? <p>{t('canvas.deriveHint', '只继承提示词和画布关系，不把原图作为参考图。')}</p> : null}
+                    {canvasEditorMode === 'edit' ? <p>{t('canvas.editHint', '会把这张图作为参考图，调用 /v1/images/edits。')}</p> : null}
+                    {canvasEditorMode === 'mask' ? <p>{t('canvas.maskHint', '先在 Mask 面板涂抹要重绘的区域，再用这个节点继续生成。')}</p> : null}
                     <button
                       type="button"
                       className={`canvasInlineGenerate ${generationActionClass}`}
@@ -5289,14 +5323,14 @@ function CreationDesk({
                   type="button"
                   className="canvasNodeResize"
                   onPointerDown={(event) => startCanvasNodeResize(event, node)}
-                  aria-label={`调整 #${node.canvasIndex || ''} 窗口大小`}
-                  title="拖拽调整窗口大小"
+                  aria-label={`${t('canvas.resize', '拖拽调整窗口大小')} #${node.canvasIndex || ''}`}
+                  title={t('canvas.resize', '拖拽调整窗口大小')}
                 />
                 <small>{compact(node.prompt, 46)}</small>
                 {selectedCanvasNodeId === node.id && !childNodeIds.size ? (
                   <div className="canvasNextHint">
-                    <strong>继续这张图</strong>
-                    <span>在下方会话补充要求，或点右上角继续优化。</span>
+                    <strong>{t('canvas.continueTitle', '继续这张图')}</strong>
+                    <span>{t('canvas.continueHint', '在下方会话补充要求，或点右上角继续优化。')}</span>
                   </div>
                 ) : null}
               </div>
@@ -5304,8 +5338,8 @@ function CreationDesk({
           }) : primaryVideoResult ? (
             <div className="canvasNode emptyCanvasNode previewFallbackNode">
               <Video size={28} />
-              <strong>视频结果</strong>
-              <span>下一次生成会在画布里形成节点关系。</span>
+              <strong>{t('canvas.videoResult', '视频结果')}</strong>
+              <span>{t('canvas.nextNodeHint', '下一次生成会在画布里形成节点关系。')}</span>
             </div>
           ) : workPreviewImage ? (
             <div className="canvasNode sourceNode previewFallbackNode">
@@ -5314,7 +5348,7 @@ function CreationDesk({
                 alt={previewAlt}
                 onError={(event) => handleImageFallback(event, workPreviewFallback)}
               />
-              <span className="canvasNodeLabel">{hasPrimaryResult ? '#1' : selectedCase?.title || '参考画面'}</span>
+              <span className="canvasNodeLabel">{hasPrimaryResult ? '#1' : selectedCase?.title || t('canvas.sourceImage', '参考画面')}</span>
             </div>
           ) : (
             <div className="canvasNode emptyCanvasNode">
@@ -5340,12 +5374,12 @@ function CreationDesk({
         ) : (
           <div className="workspaceTitleStrip">
             <Video size={17} />
-            <span>视频创作</span>
+            <span>{t('workspace.video', '视频创作')}</span>
           </div>
         )}
         {selectedCase && mode === 'image' ? (
           <div className="caseMeta">
-            <span>{typeof selectedCase.id === 'number' ? `#${selectedCase.id}` : '外部'}</span>
+            <span>{typeof selectedCase.id === 'number' ? `#${selectedCase.id}` : t('gallery.external', '外部')}</span>
             <h2>{selectedCase.title}</h2>
             <p>{[categoryLabel(selectedCase.category || selectedCase.section || '模板'), selectedCase.sourceName].filter(Boolean).join(' · ')}</p>
             {Array.isArray(selectedCase.riskTags) && selectedCase.riskTags.length ? (
@@ -5372,8 +5406,8 @@ function CreationDesk({
         {mode !== 'video' && mode !== 'mask' && layoutSections.references ? (
           <div className="referenceBox">
             <div className="miniPanelHead">
-              <strong>参考图（可选）</strong>
-              <button type="button" onClick={() => toggleLayoutSection('references')} aria-label="收起参考图">
+              <strong>{t('references.title', '参考图（可选）')}</strong>
+              <button type="button" onClick={() => toggleLayoutSection('references')} aria-label={t('references.collapse', '收起参考图')}>
                 <PanelLeftClose size={15} />
               </button>
             </div>
@@ -5397,7 +5431,7 @@ function CreationDesk({
               onPaste={referencePasteFiles}
             >
               <Upload size={18} />
-              <span>{referenceFiles.length ? `已选择 ${referenceFiles.length} 张` : '拖拽 / 粘贴 / 上传参考图'}</span>
+              <span>{referenceFiles.length ? t('references.selected', '已选择 {count} 张', { count: referenceFiles.length }) : t('references.upload', '拖拽 / 粘贴 / 上传参考图')}</span>
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
@@ -5412,27 +5446,27 @@ function CreationDesk({
               <div className="referenceThumbs">
                 {referencePreviews.map((url, index) => (
                   <figure key={url}>
-                    <img src={url} alt={referenceItems[index]?.file?.name || `参考图 ${index + 1}`} />
+                    <img src={url} alt={referenceItems[index]?.file?.name || t('references.referenceIndex', '参考 {index}', { index: index + 1 })} />
                     <figcaption>
                       <select
                         value={referenceItems[index]?.role || 'identity'}
                         onChange={(event) => updateReferenceRole(index, event.target.value)}
-                        aria-label={`参考图 ${index + 1} 角色`}
+                        aria-label={t('references.role', '参考图 {index} 角色', { index: index + 1 })}
                       >
                         {REFERENCE_ROLES.map((role) => (
                           <option key={role.value} value={role.value}>{role.label}</option>
                         ))}
                       </select>
-                      <span>{index === 0 ? '主参考' : `参考 ${index + 1}`}</span>
+                      <span>{index === 0 ? t('references.mainReference', '主参考') : t('references.referenceIndex', '参考 {index}', { index: index + 1 })}</span>
                     </figcaption>
                     <div className="referenceThumbActions">
-                      <button type="button" onClick={() => moveReferenceImage(index, -1)} disabled={index === 0} aria-label="前移参考图">
+                      <button type="button" onClick={() => moveReferenceImage(index, -1)} disabled={index === 0} aria-label={t('references.moveBefore', '前移参考图')}>
                         <ArrowUp size={13} />
                       </button>
-                      <button type="button" onClick={() => moveReferenceImage(index, 1)} disabled={index === referencePreviews.length - 1} aria-label="后移参考图">
+                      <button type="button" onClick={() => moveReferenceImage(index, 1)} disabled={index === referencePreviews.length - 1} aria-label={t('references.moveAfter', '后移参考图')}>
                         <ArrowDown size={13} />
                       </button>
-                      <button type="button" onClick={() => removeReferenceImage(index)} aria-label="移除参考图">
+                      <button type="button" onClick={() => removeReferenceImage(index)} aria-label={t('references.remove', '移除参考图')}>
                         <X size={13} />
                       </button>
                     </div>
@@ -5444,14 +5478,14 @@ function CreationDesk({
         ) : mode !== 'video' && mode !== 'mask' ? (
           <button type="button" className="collapsedWorkbenchBlock referenceCollapsedBlock" onClick={() => toggleLayoutSection('references')}>
             <Upload size={16} />
-            <span>{referenceFiles.length ? `参考图已收起，共 ${referenceFiles.length} 张` : '参考图已收起，点击展开拖拽、粘贴或上传。'}</span>
+            <span>{referenceFiles.length ? t('references.collapsedSelected', '参考图已收起，共 {count} 张', { count: referenceFiles.length }) : t('references.collapsedEmpty', '参考图已收起，点击展开拖拽、粘贴或上传。')}</span>
           </button>
         ) : null}
         {mode === 'mask' && layoutSections.references ? (
           <div className="referenceBox maskReferenceBox">
             <div className="miniPanelHead">
-              <strong>参考图与蒙版</strong>
-              <button type="button" onClick={() => toggleLayoutSection('references')} aria-label="收起参考图">
+              <strong>{t('references.maskTitle', '参考图与蒙版')}</strong>
+              <button type="button" onClick={() => toggleLayoutSection('references')} aria-label={t('references.collapse', '收起参考图')}>
                 <PanelLeftClose size={15} />
               </button>
             </div>
@@ -5486,21 +5520,21 @@ function CreationDesk({
             {maskExportUrl ? (
               <div className="maskExportPreview">
                 <img src={maskExportUrl} alt="已导出的 mask" />
-                <span>已导出 mask.png</span>
+                <span>{t('references.exportedMask', '已导出 mask.png')}</span>
               </div>
             ) : null}
           </div>
         ) : mode === 'mask' ? (
           <button type="button" className="collapsedWorkbenchBlock referenceCollapsedBlock" onClick={() => toggleLayoutSection('references')}>
             <Upload size={16} />
-            <span>参考图与蒙版已收起，点击展开继续编辑。</span>
+            <span>{t('references.maskCollapsed', '参考图与蒙版已收起，点击展开继续编辑。')}</span>
           </button>
         ) : null}
         {mode === 'video' && layoutSections.references ? (
           <div className="referenceBox">
             <div className="miniPanelHead">
-              <strong>参考图（可选）</strong>
-              <button type="button" onClick={() => toggleLayoutSection('references')} aria-label="收起参考图">
+              <strong>{t('references.title', '参考图（可选）')}</strong>
+              <button type="button" onClick={() => toggleLayoutSection('references')} aria-label={t('references.collapse', '收起参考图')}>
                 <PanelLeftClose size={15} />
               </button>
             </div>
@@ -5524,7 +5558,7 @@ function CreationDesk({
               onPaste={videoReferencePasteFiles}
             >
               <Upload size={18} />
-              <span>{videoReferenceFiles.length ? '已选择视频参考图' : '拖拽 / 粘贴 / 上传参考图，可选'}</span>
+              <span>{videoReferenceFiles.length ? t('references.selectedVideo', '已选择视频参考图') : t('references.optionalUpload', '拖拽 / 粘贴 / 上传参考图，可选')}</span>
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
@@ -5538,8 +5572,8 @@ function CreationDesk({
               <div className="referenceThumbs videoReferenceThumbs">
                 {videoReferencePreviews.map((url, index) => (
                   <figure key={url}>
-                    <img src={url} alt={videoReferenceFiles[index]?.name || '视频参考图'} />
-                    <button type="button" onClick={removeVideoReferenceImage} aria-label="移除参考图">
+                    <img src={url} alt={videoReferenceFiles[index]?.name || t('references.videoReference', '视频参考图')} />
+                    <button type="button" onClick={removeVideoReferenceImage} aria-label={t('references.remove', '移除参考图')}>
                       <X size={13} />
                     </button>
                   </figure>
@@ -5550,18 +5584,18 @@ function CreationDesk({
         ) : mode === 'video' ? (
           <button type="button" className="collapsedWorkbenchBlock referenceCollapsedBlock" onClick={() => toggleLayoutSection('references')}>
             <Upload size={16} />
-            <span>{videoReferenceFiles.length ? '参考图已收起，共 1 张' : '参考图已收起，点击展开。'}</span>
+            <span>{videoReferenceFiles.length ? t('references.collapsedVideoSelected', '参考图已收起，共 1 张') : t('references.collapsedSimple', '参考图已收起，点击展开。')}</span>
           </button>
         ) : null}
         {layoutSections.parameters && mode !== 'video' ? (
           <div className="routeStrip autoRouteStrip">
-            <span><SlidersHorizontal size={15} /> 接口</span>
-            <p>{mode === 'mask' || (mode === 'edit' && (referenceFiles.length || selectedCanvasNode?.url)) ? '参考图 / Mask 会自动走 /v1/images/edits' : '文生图 / 继续衍生会走 /v1/images/generations'}</p>
+            <span><SlidersHorizontal size={15} /> {t('composer.routeLabel', '接口')}</span>
+            <p>{mode === 'mask' || (mode === 'edit' && (referenceFiles.length || selectedCanvasNode?.url)) ? t('composer.routeEditHint', '参考图 / Mask 会自动走 /v1/images/edits') : t('composer.routeImageHint', '文生图 / 继续衍生会走 /v1/images/generations')}</p>
           </div>
         ) : layoutSections.parameters ? (
           <div className="routeStrip">
-            <span><Video size={15} /> 视频接口</span>
-            <div><button type="button" className="active">任务</button></div>
+            <span><Video size={15} /> {t('composer.videoRouteLabel', '视频接口')}</span>
+            <div><button type="button" className="active">{t('composer.videoTask', '任务')}</button></div>
           </div>
         ) : null}
         {layoutSections.parameters ? <div className="controlGrid">
@@ -5752,7 +5786,7 @@ function CreationDesk({
         <div className="deskActions">
           <button type="button" onClick={optimizeCurrentPrompt} disabled={optimizingPrompt}>
             {optimizingPrompt ? <LoaderCircle className="spin" size={18} /> : <WandSparkles size={18} />}
-            {optimizingPrompt ? '优化中' : 'AI 优化'}
+            {optimizingPrompt ? t('composer.optimizing', '优化中') : `AI ${t('composer.optimize', '优化')}`}
           </button>
           <button type="button" className={`primaryAction ${generationActionClass}`} onClick={handleGenerateAction} disabled={generationActionDisabled}>
             {generationActionIcon}
@@ -5767,7 +5801,7 @@ function CreationDesk({
             {isGenerating ? (
               <button type="button" className="composerStopAction" onClick={stopGeneration}>
                 <X size={14} />
-                停止当前等待
+                {t('composer.stopWaiting', '停止当前等待')}
               </button>
             ) : null}
           </>
@@ -5775,8 +5809,8 @@ function CreationDesk({
       </div>
       <section className={`resultStage ${hasPrimaryResult ? 'hasResult' : ''}`}>
         <div className="resultStageHead">
-          <strong>{mode === 'video' ? '视频结果' : '生成结果'}</strong>
-          <span>{hasPrimaryResult ? `共 ${mode === 'video' ? videoResults.length : results.length} 张` : '待生成'}</span>
+          <strong>{mode === 'video' ? t('canvas.videoResult', '视频结果') : t('composer.resultTitle', '生成结果')}</strong>
+          <span>{hasPrimaryResult ? t('composer.resultCount', '共 {count} 张', { count: mode === 'video' ? videoResults.length : results.length }) : t('composer.pending', '待生成')}</span>
         </div>
         {mode === 'video' ? (
           <VideoResultGrid urls={videoResults} downloadMeta={currentDownloadMeta} onPreview={(url, index) => setPreviewVideo({ url, index })} />
@@ -5790,18 +5824,18 @@ function CreationDesk({
             type="button"
             className={`bottomComposerToggle ${layoutSections.bottomComposer ? 'isOpen' : 'isClosed'}`}
             onClick={() => toggleLayoutSection('bottomComposer')}
-            aria-label={layoutSections.bottomComposer ? '收起对话' : '展开对话'}
-            title={layoutSections.bottomComposer ? '收起对话' : '展开对话'}
+            aria-label={layoutSections.bottomComposer ? t('composer.collapse', '收起对话') : t('composer.expand', '展开对话')}
+            title={layoutSections.bottomComposer ? t('composer.collapse', '收起对话') : t('composer.expand', '展开对话')}
           >
             {layoutSections.bottomComposer ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
           </button>
           <div className="composerPanelTitle">
-            <strong>创作会话</strong>
-            <span>{selectedCanvasNode ? `基于画布 #${selectedCanvasNode.canvasIndex || ''}` : '提示词优化与生成'}</span>
+            <strong>{t('composer.conversation', '创作会话')}</strong>
+            <span>{selectedCanvasNode ? t('composer.selected', '基于画布 #{index}', { index: selectedCanvasNode.canvasIndex || '' }) : t('composer.defaultTitle', '提示词优化与生成')}</span>
           </div>
           {layoutSections.bottomComposer && selectedCanvasNode ? (
-            <button type="button" className="composerNewRootAction" onClick={() => setSelectedCanvasNodeId('')} aria-label="新作品" title="新作品">
-              新作品
+            <button type="button" className="composerNewRootAction" onClick={() => setSelectedCanvasNodeId('')} aria-label={t('composer.newWork', '新作品')} title={t('composer.newWork', '新作品')}>
+              {t('composer.newWork', '新作品')}
             </button>
           ) : null}
           {layoutSections.bottomComposer ? (
@@ -5813,13 +5847,13 @@ function CreationDesk({
                 aria-expanded={composerInspirationOpen}
               >
                 <WandSparkles size={14} />
-                灵感
+                {t('composer.inspiration', '灵感')}
               </button>
               {composerInspirationOpen ? (
                 <div className="composerInspirationPanel">
                   <div className="composerInspirationHead">
-                    <strong>灵感推荐</strong>
-                    <button type="button" onClick={() => onOpenWorkspace?.('inspiration')}>查看更多</button>
+                    <strong>{t('composer.inspirationTitle', '灵感推荐')}</strong>
+                    <button type="button" onClick={() => onOpenWorkspace?.('inspiration')}>{t('composer.viewMore', '查看更多')}</button>
                   </div>
                   <div className="composerRecipeList">
                     {CREATIVE_RECIPES.slice(0, 4).map((recipe) => (
@@ -5835,7 +5869,7 @@ function CreationDesk({
           ) : null}
         </div>
         {layoutSections.bottomComposer ? (
-          <div className="composerThread" aria-label="AI 对话记录">
+          <div className="composerThread" aria-label={t('composer.aiThread', 'AI 对话记录')}>
             <div className={`composerContextBar ${composerUsesEditRoute ? 'editRoute' : 'responseRoute'}`}>
               <div>
                 <strong>{composerContextTitle}</strong>
@@ -5844,11 +5878,11 @@ function CreationDesk({
               <em>{composerRouteLabel}</em>
               {selectedCanvasNode ? (
                 <button type="button" onClick={() => setSelectedCanvasNodeId('')}>
-                  作为新作品
+                  {t('composer.asNewWork', '作为新作品')}
                 </button>
               ) : null}
             </div>
-            <div className="composerQuickChips" aria-label="快速灵感">
+            <div className="composerQuickChips" aria-label={t('composer.quickInspiration', '快速灵感')}>
               {composerQuickRecipes.map((recipe) => (
                 <button type="button" key={recipe.id} onClick={() => applyCreativeRecipe(recipe)}>
                   {recipe.title}
@@ -5860,14 +5894,14 @@ function CreationDesk({
                 </button>
               ))}
           <button type="button" onClick={() => setComposerInspirationOpen((value) => !value)}>
-                {composerInspirationOpen ? '收起灵感' : '更多灵感'}
+                {composerInspirationOpen ? t('composer.lessInspiration', '收起灵感') : t('composer.moreInspiration', '更多灵感')}
               </button>
             </div>
             {generationQueue.length ? (
-              <div className="composerQueuePanel" aria-label="生成队列">
+              <div className="composerQueuePanel" aria-label={t('composer.queue', '生成队列')}>
                 <div className="composerQueueHead">
-                  <strong>生成队列</strong>
-                  <span>{runningQueueItem ? '1 个生成中' : '当前空闲'} · {queuedGenerationCount} 个排队</span>
+                  <strong>{t('composer.queue', '生成队列')}</strong>
+                  <span>{runningQueueItem ? t('composer.queueRunning', '1 个生成中') : t('composer.queueIdle', '当前空闲')} · {t('composer.queueWaiting', '{count} 个排队', { count: queuedGenerationCount })}</span>
                 </div>
                 <div className="composerQueueList">
                   {generationQueue.slice(-5).map((item, index) => (
@@ -5890,7 +5924,7 @@ function CreationDesk({
             {composerGenerationVisible ? (
               <div className={`composerGenerationCard ${status} ${progress.stage === 'pending_review' ? 'pendingReview' : ''}`}>
                 <div className="composerGenerationHead">
-                  <strong>{isGenerating ? '正在生成' : status === 'success' ? '生成完成' : progress.stage === 'pending_review' ? '需要确认' : status === 'error' ? '生成异常' : '生成状态'}</strong>
+                  <strong>{isGenerating ? t('composer.statusGenerating', '正在生成') : status === 'success' ? t('composer.statusDone', '生成完成') : progress.stage === 'pending_review' ? t('composer.statusReview', '需要确认') : status === 'error' ? t('composer.statusError', '生成异常') : t('composer.status', '生成状态')}</strong>
                   <span>{mode === 'video' ? videoModel : model}</span>
                   <em>{composerRouteLabel}</em>
                 </div>
@@ -5900,22 +5934,22 @@ function CreationDesk({
                 {isGenerating ? (
                   <button type="button" className="composerStopAction" onClick={stopGeneration}>
                     <X size={14} />
-                    停止当前等待
+                    {t('composer.stopWaiting', '停止当前等待')}
                   </button>
                 ) : null}
               </div>
             ) : null}
             {assistantMessages.length ? assistantMessages.slice(-8).map((item) => (
               <div className={`composerMessage ${item.role} ${item.pending ? 'pending' : ''} ${item.failed ? 'failed' : ''}`} key={item.id}>
-                <span>{item.role === 'assistant' ? 'AI' : '你'}</span>
+                <span>{item.role === 'assistant' ? 'AI' : t('composer.you', '你')}</span>
                 <p>{item.content}</p>
-                {item.finalPrompt ? <button type="button" onClick={() => setPrompt(item.finalPrompt)}>放入输入框</button> : null}
+                {item.finalPrompt ? <button type="button" onClick={() => setPrompt(item.finalPrompt)}>{t('composer.putIntoInput', '放入输入框')}</button> : null}
               </div>
             )) : (
               <div className="composerEmptyThread">
                 <MessageSquareText size={18} />
-                <strong>把想法说出来，先整理，再生成</strong>
-                <span>例如：基于 #1 保留人物，换成清晨城市背景，画面更安静。</span>
+                <strong>{t('composer.title', '把想法说出来，先整理，再生成')}</strong>
+                <span>{t('composer.example', '例如：基于 #1 保留人物，换成清晨城市背景，画面更安静。')}</span>
               </div>
             )}
           </div>
@@ -5934,7 +5968,7 @@ function CreationDesk({
                   sendAssistantMessage();
                 }
               }}
-              placeholder={selectedCanvasNode ? '和 AI 说你想怎样延续这张画布：换背景、加产品、调整风格...' : '和 AI 说你的创作想法，它会帮你整理成可生成的提示词。'}
+              placeholder={selectedCanvasNode ? t('composer.placeholderCanvas', '和 AI 说你想怎样延续这张画布：换背景、加产品、调整风格...') : t('composer.placeholder', '和 AI 说你的创作想法，它会帮你整理成可生成的提示词。')}
             />
           </label>
           <div className="composerActionGroup">
@@ -5943,11 +5977,11 @@ function CreationDesk({
               className="composerAssistantAction"
               onClick={sendAssistantMessage}
               disabled={status === 'loading' || optimizingPrompt || caseResolving}
-              aria-label="发送到提示词助手，会调用对话模型并使用当前 Key 额度"
-              title="发送到提示词助手，会调用对话模型并使用当前 Key 额度"
+              aria-label={t('composer.send', '发送到提示词助手，会调用对话模型并使用当前 Key 额度')}
+              title={t('composer.send', '发送到提示词助手，会调用对话模型并使用当前 Key 额度')}
             >
               {optimizingPrompt ? <LoaderCircle className="spin" size={16} /> : <SendHorizontal size={16} />}
-              <span>优化</span>
+              <span>{t('composer.optimize', '优化')}</span>
             </button>
             <button
               type="button"
@@ -5961,7 +5995,7 @@ function CreationDesk({
           </div>
         </div>
       </div>
-      <aside className="paramRail" aria-label="参数">
+      <aside className="paramRail" aria-label={t('params.aria', '参数')}>
         <button
           type="button"
           className="paramRailHead"
@@ -5969,33 +6003,33 @@ function CreationDesk({
             setActiveParamPanel('');
             updateLayoutSections({ parametersRail: layoutSections.parametersRail === false });
           }}
-          aria-label={layoutSections.parametersRail === false ? '展开参数栏' : '收起参数栏'}
-          title={layoutSections.parametersRail === false ? '展开参数栏' : '收起参数栏'}
+          aria-label={layoutSections.parametersRail === false ? t('params.expand', '展开参数栏') : t('params.collapse', '收起参数栏')}
+          title={layoutSections.parametersRail === false ? t('params.expand', '展开参数栏') : t('params.collapse', '收起参数栏')}
         >
           {layoutSections.parametersRail === false ? (
             <SlidersHorizontal size={18} />
           ) : (
             <>
               <span>›</span>
-              参数
+              {t('params.aria', '参数')}
             </>
           )}
         </button>
         <button type="button" className={activeParamPanel === 'model' ? 'active' : ''} onClick={() => openParamPanel('model')}>
           <Server size={18} />
-          <span>模型</span>
+          <span>{t('params.model', '模型')}</span>
         </button>
         <button type="button" className={activeParamPanel === 'size' ? 'active' : ''} onClick={() => openParamPanel('size')}>
           <ScanLine size={18} />
-          <span>尺寸</span>
+          <span>{t('params.size', '尺寸')}</span>
         </button>
         <button type="button" className={activeParamPanel === 'quality' ? 'active' : ''} onClick={() => openParamPanel('quality')}>
           <span className="paramRailBadge">HD</span>
-          <span>质量</span>
+          <span>{t('params.quality', '质量')}</span>
         </button>
         <button type="button" className={activeParamPanel === 'count' ? 'active' : ''} onClick={() => openParamPanel('count')}>
           <Images size={18} />
-          <span>数量</span>
+          <span>{t('params.count', '数量')}</span>
         </button>
         <button type="button" className={`paramGenerateAction ${generationActionClass}`} onClick={handleGenerateAction} disabled={generationActionDisabled}>
           {generationActionIcon}
@@ -6003,10 +6037,10 @@ function CreationDesk({
         </button>
       </aside>
       {layoutSections.parameters && activeParamPanel ? (
-        <aside className="paramDrawer" aria-label="当前参数">
+        <aside className="paramDrawer" aria-label={t('params.current', '当前参数')}>
           <div className="paramDrawerHead">
-            <strong>{activeParamPanel === 'model' ? '模型' : activeParamPanel === 'size' ? '尺寸' : activeParamPanel === 'quality' ? '质量' : '数量'}</strong>
-            <button type="button" onClick={() => toggleLayoutSection('parameters')} aria-label="收起参数">
+            <strong>{activeParamPanel === 'model' ? t('params.model', '模型') : activeParamPanel === 'size' ? t('params.size', '尺寸') : activeParamPanel === 'quality' ? t('params.quality', '质量') : t('params.count', '数量')}</strong>
+            <button type="button" onClick={() => toggleLayoutSection('parameters')} aria-label={t('params.close', '收起参数')}>
               <PanelLeftClose size={15} />
             </button>
           </div>
@@ -6014,16 +6048,16 @@ function CreationDesk({
             <div className="paramDrawerBody">
               {mode === 'video' ? (
                 <label className="paramField">
-                  <span>视频模型</span>
+                  <span>{t('params.videoModel', '视频模型')}</span>
                   <select value={hasVideoModels ? videoModel : ''} onChange={(event) => setVideoModel(event.target.value)} disabled={!hasVideoModels}>
                     {hasVideoModels ? videoModelOptions.map((item) => <option key={item.id} value={item.id}>{item.label || item.id}</option>) : (
-                      <option value="">当前 Key 未开放视频模型</option>
+                      <option value="">{t('params.currentKeyNoVideo', '当前 Key 未开放视频模型')}</option>
                     )}
                   </select>
                 </label>
               ) : (
                 <label className="paramField">
-                  <span>图片模型</span>
+                  <span>{t('params.imageModel', '图片模型')}</span>
                   <select value={model} onChange={(event) => setModel(event.target.value)}>
                     {imageModelOptions.map((item) => <option key={item.id} value={item.id}>{item.label || item.id}</option>)}
                   </select>
@@ -6031,7 +6065,7 @@ function CreationDesk({
               )}
               {mode !== 'video' ? (
                 <div className="paramHint">
-                  {mode === 'mask' || (mode === 'edit' && (referenceFiles.length || selectedCanvasNode?.url)) ? '当前会自动使用 /v1/images/edits。' : '当前会自动使用 /v1/images/generations。'}
+                  {mode === 'mask' || (mode === 'edit' && (referenceFiles.length || selectedCanvasNode?.url)) ? t('params.routeEdits', '当前会自动使用 /v1/images/edits。') : t('params.routeGenerations', '当前会自动使用 /v1/images/generations。')}
                 </div>
               ) : null}
             </div>
@@ -6045,7 +6079,7 @@ function CreationDesk({
                       <button type="button" className={videoAspect === item.value ? 'active' : ''} key={item.value} onClick={() => setVideoAspect(item.value)}>{item.label}</button>
                     ))}
                   </div>
-                  <div className="paramHint">输出 {videoSize.width} x {videoSize.height}</div>
+                  <div className="paramHint">{t('params.outputSize', '输出 {width} x {height}', { width: videoSize.width, height: videoSize.height })}</div>
                 </>
               ) : (
                 <>
@@ -6066,13 +6100,13 @@ function CreationDesk({
                   </div>
                   {aspect === 'custom' ? (
                     <label className="paramField">
-                      <span>接口尺寸</span>
+                      <span>{t('params.apiSize', '接口尺寸')}</span>
                       <select value={customSize} onChange={(event) => setCustomSize(normalizeSize(event.target.value))}>
                         {CUSTOM_SIZE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                       </select>
                     </label>
                   ) : null}
-                  <div className="paramHint">当前请求 size 为 {size}；2K/4K 会作为目标分辨率追加到提示词里。</div>
+                  <div className="paramHint">{t('params.currentSizeHint', '当前请求 size 为 {size}；2K/4K 会作为目标分辨率追加到提示词里。', { size })}</div>
                 </>
               )}
             </div>
@@ -6083,7 +6117,7 @@ function CreationDesk({
                 <div className="paramSegment">
                   {VIDEO_QUALITY.map((item) => (
                     <button type="button" className={videoQuality === item ? 'active' : ''} key={item} onClick={() => setVideoQuality(item)}>
-                      {item === 'auto' ? '自动' : item === 'high' ? '高' : '标准'}
+                      {item === 'auto' ? t('params.auto', '自动') : item === 'high' ? t('params.high', '高') : t('params.standard', '标准')}
                     </button>
                   ))}
                 </div>
@@ -6103,7 +6137,7 @@ function CreationDesk({
                       </button>
                     ))}
                   </div>
-                  <div className="paramHint">分辨率档位会追加到生成要求里</div>
+                  <div className="paramHint">{t('params.resolutionHint', '分辨率档位会追加到生成要求里')}</div>
                 </>
               )}
             </div>
@@ -6126,7 +6160,7 @@ function CreationDesk({
               ) : (
                 <>
                   <label className="paramRange">
-                    <span>图片数量</span>
+                    <span>{t('params.imageCount', '图片数量')}</span>
                     <strong>{countValue}</strong>
                     <input type="range" min="1" max="10" value={countValue} onChange={(event) => setCount(normalizeCount(event.target.value))} />
                   </label>
@@ -6141,7 +6175,7 @@ function CreationDesk({
           ) : null}
           <button type="button" className={`paramDrawerGenerate ${generationActionClass}`} onClick={handleGenerateAction} disabled={generationActionDisabled}>
             {compactGenerationActionIcon}
-            {isGenerating ? '加入队列' : needsReviewBeforeRetry ? '确认后重试' : status === 'error' ? '重试当前参数' : mode === 'video' ? '按当前参数生成视频' : '按当前参数生成图片'}
+            {isGenerating ? t('params.queueMore', '加入队列') : needsReviewBeforeRetry ? t('params.confirmRetry', '确认后重试') : status === 'error' ? t('params.retryParams', '重试当前参数') : mode === 'video' ? t('params.generateVideo', '按当前参数生成视频') : t('params.generateImage', '按当前参数生成图片')}
           </button>
         </aside>
       ) : null}
