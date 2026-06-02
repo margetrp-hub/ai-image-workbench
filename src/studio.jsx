@@ -137,6 +137,30 @@ const MASK_HISTORY_LIMIT = 6;
 const MASK_FILL_COLOR = 'rgba(178, 39, 50, 0.34)';
 const INITIAL_TEMPLATE_LIMIT = 12;
 const TEMPLATE_PAGE_SIZE = 12;
+const HISTORY_PAGE_SIZE = 20;
+const PROTECTED_IMAGE_CONCURRENCY = 4;
+const protectedImageQueue = [];
+let activeProtectedImageRequests = 0;
+
+function runQueuedProtectedImageTasks() {
+  while (activeProtectedImageRequests < PROTECTED_IMAGE_CONCURRENCY && protectedImageQueue.length) {
+    const task = protectedImageQueue.shift();
+    activeProtectedImageRequests += 1;
+    task.run()
+      .then(task.resolve, task.reject)
+      .finally(() => {
+        activeProtectedImageRequests = Math.max(0, activeProtectedImageRequests - 1);
+        runQueuedProtectedImageTasks();
+      });
+  }
+}
+
+function enqueueProtectedImageTask(run) {
+  return new Promise((resolve, reject) => {
+    protectedImageQueue.push({ run, resolve, reject });
+    runQueuedProtectedImageTasks();
+  });
+}
 const CATEGORY_LABELS = {
   'Architecture & Spaces': '建筑空间',
   'Brand & Logos': '品牌标识',
@@ -1702,10 +1726,13 @@ function GalleryWorkspacePanel({
   videoInspirations,
   historyItems,
   historyStatus,
+  historyHasMore,
+  historyLoadingMore,
   selectedHistoryId,
   onSelectHistory,
   onDeleteHistory,
   onClearHistory,
+  onLoadMoreHistory,
   favoriteTemplates,
   showFavoritesOnly,
   onToggleFavoritesOnly,
@@ -1768,6 +1795,11 @@ function GalleryWorkspacePanel({
                 key={item.id}
               />
             ))}
+            {historyHasMore ? (
+              <button type="button" className="loadMoreButton galleryLoadMore" onClick={onLoadMoreHistory} disabled={historyLoadingMore}>
+                {historyLoadingMore ? '正在加载' : '加载更多历史'}
+              </button>
+            ) : null}
           </div>
         ) : (
           <div className="workspaceEmptyPanel">
@@ -2727,7 +2759,7 @@ function ProtectedStudioImage({ src, fallbackSrc = '', alt = '', fallback = null
       const session = loadSession();
       if (!session?.accessToken) return '';
       const historyClient = new StudioHistoryClient({ session });
-      return await historyClient.resolveAssetUrl(value) || '';
+      return await enqueueProtectedImageTask(() => historyClient.resolveAssetUrl(value)) || '';
     }
 
     async function resolveImage() {
@@ -7012,6 +7044,8 @@ function StudioApp() {
   const [bootError, setBootError] = useState('');
   const [historyItems, setHistoryItems] = useState(() => loadHistory());
   const [historyStatus, setHistoryStatus] = useState('idle');
+  const [historyNextOffset, setHistoryNextOffset] = useState(null);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [selectedHistory, setSelectedHistory] = useState(null);
   const [modelOptions, setModelOptions] = useState({ image: [], responses: [], video: [] });
   const [modelsStatus, setModelsStatus] = useState('idle');
@@ -7247,20 +7281,15 @@ function StudioApp() {
     const historyClient = new StudioHistoryClient({ session });
     const scope = historyScope();
     setHistoryStatus('loading');
-    historyClient.listRecords()
-      .then((records) => {
+    setHistoryNextOffset(null);
+    historyClient.listRecords({ limit: HISTORY_PAGE_SIZE })
+      .then(({ records, nextOffset }) => {
         if (!active) return;
         const merged = mergeHistoryRecords(records, loadHistory(scope));
         setHistoryItems(merged);
         saveHistory(merged, scope);
+        setHistoryNextOffset(nextOffset);
         setHistoryStatus('synced');
-        return Promise.all(merged.map((record) => historyClient.resolveRecordAssets(record)));
-      })
-      .then((resolvedRecords) => {
-        if (!active || !resolvedRecords) return;
-        const merged = mergeHistoryRecords(resolvedRecords, loadHistory(scope));
-        setHistoryItems(merged);
-        saveHistory(merged, scope);
       })
       .catch(() => {
         if (!active) return;
@@ -7272,6 +7301,23 @@ function StudioApp() {
       active = false;
     };
   }, [session?.accessToken, profile?.id, profile?.email, profile?.username]);
+
+  function handleLoadMoreHistory() {
+    if (!session?.accessToken || historyNextOffset === null || historyLoadingMore) return;
+    const historyClient = new StudioHistoryClient({ session });
+    const scope = historyScope();
+    setHistoryLoadingMore(true);
+    historyClient.listRecords({ limit: HISTORY_PAGE_SIZE, offset: historyNextOffset })
+      .then(({ records, nextOffset }) => {
+        const merged = mergeHistoryRecords(records, historyItems);
+        setHistoryItems(merged);
+        saveHistory(merged, scope);
+        setHistoryNextOffset(nextOffset);
+        setHistoryStatus('synced');
+      })
+      .catch(() => setHistoryStatus(historyItems.length ? 'local' : 'idle'))
+      .finally(() => setHistoryLoadingMore(false));
+  }
 
   useEffect(() => {
     if (!session?.accessToken) {
@@ -7649,10 +7695,13 @@ function handleSelectHistory(item) {
             videoInspirations={siteData?.videoInspirations || FALLBACK_VIDEO_INSPIRATIONS}
             historyItems={filteredHistoryItems}
             historyStatus={historyStatus}
+            historyHasMore={historyNextOffset !== null}
+            historyLoadingMore={historyLoadingMore}
             selectedHistoryId={selectedHistory?.id}
             onSelectHistory={handleSelectHistory}
             onDeleteHistory={handleDeleteHistory}
             onClearHistory={handleClearHistory}
+            onLoadMoreHistory={handleLoadMoreHistory}
             favoriteTemplates={favoriteTemplates}
             showFavoritesOnly={showFavoritesOnly}
             onToggleFavoritesOnly={() => setShowFavoritesOnly((value) => !value)}
@@ -7677,10 +7726,13 @@ function handleSelectHistory(item) {
             videoInspirations={siteData?.videoInspirations || FALLBACK_VIDEO_INSPIRATIONS}
             historyItems={filteredHistoryItems}
             historyStatus={historyStatus}
+            historyHasMore={historyNextOffset !== null}
+            historyLoadingMore={historyLoadingMore}
             selectedHistoryId={selectedHistory?.id}
             onSelectHistory={handleSelectHistory}
             onDeleteHistory={handleDeleteHistory}
             onClearHistory={handleClearHistory}
+            onLoadMoreHistory={handleLoadMoreHistory}
             favoriteTemplates={favoriteTemplates}
             showFavoritesOnly={showFavoritesOnly}
             onToggleFavoritesOnly={() => setShowFavoritesOnly((value) => !value)}

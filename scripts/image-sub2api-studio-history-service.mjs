@@ -1358,7 +1358,11 @@ async function handler(req, res) {
 
     if (req.method === 'GET' && parts.length === 2) {
       const records = await readRecords(auth);
-      return sendJson(res, 200, { ok: true, records });
+      const limit = Math.max(1, Math.min(HISTORY_LIMIT, Number(url.searchParams.get('limit') || 30)));
+      const offset = Math.max(0, Number(url.searchParams.get('offset') || 0));
+      const page = records.slice(offset, offset + limit);
+      const nextOffset = offset + page.length < records.length ? offset + page.length : null;
+      return sendJson(res, 200, { ok: true, records: page, total: records.length, nextOffset });
     }
 
     if (req.method === 'POST' && parts.length === 2) {

@@ -10,7 +10,8 @@
     "dev:studio": "vite --open /studio.html",
     "build": "vite build",
     "build:studio": "vite build --base=/studio/",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke:studio": "node scripts/smoke-studio-page.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",

@@ -1469,9 +1469,17 @@ export class StudioHistoryClient {
     return payload;
   }
 
-  async listRecords() {
-    const payload = await this.request('/history');
-    return Array.isArray(payload.records) ? payload.records : [];
+  async listRecords({ limit = 30, offset = 0 } = {}) {
+    const params = new URLSearchParams();
+    if (limit) params.set('limit', String(limit));
+    if (offset) params.set('offset', String(offset));
+    const payload = await this.request(`/history${params.toString() ? `?${params}` : ''}`);
+    const records = Array.isArray(payload.records) ? payload.records : [];
+    return {
+      records,
+      total: Number(payload.total || records.length),
+      nextOffset: payload.nextOffset === null || payload.nextOffset === undefined ? null : Number(payload.nextOffset)
+    };
   }
 
   async listLibrary() {
