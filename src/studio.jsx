@@ -60,6 +60,7 @@ import { createTranslator, loadStudioLanguage, nextLanguage, saveStudioLanguage,
 
 const IMAGE_MODELS = ['gpt-image-2', 'gpt-image-1', 'gpt-image-1-mini'];
 const RESPONSE_MODELS = ['gpt-5.5', 'gpt-5.2', 'gpt-5.1', 'gpt-4.1'];
+const PROMPT_ASSISTANT_MODEL_EXCLUDE_PATTERN = /image|video|sora|runway|kling|veo|codex|review|audit|security|embed|rerank|tts|whisper/i;
 const VIDEO_MODELS = [];
 const IMAGE_GENERATION_ROUTE_LABEL = '自动选择';
 const SIZES = ['auto', '1024x1024', '1536x1024', '1024x1536'];
@@ -3304,7 +3305,7 @@ function CreationDesk({
   const defaultImageModelOptions = IMAGE_MODELS.map((id) => ({ id, label: id }));
   const imageModelOptions = modelOptions?.image?.length ? modelOptions.image : defaultImageModelOptions;
   const assistantModelOptions = modelOptions?.responses?.length
-    ? modelOptions.responses.filter((item) => !modelLooksLikeImage(item) && !/video|sora|runway|kling|veo/i.test(`${item.id} ${item.label}`))
+    ? modelOptions.responses.filter((item) => !modelLooksLikeImage(item) && !PROMPT_ASSISTANT_MODEL_EXCLUDE_PATTERN.test(`${item.id} ${item.label || ''}`))
     : [];
   const responseModelOptions = assistantModelOptions.length
     ? assistantModelOptions
@@ -6521,12 +6522,17 @@ function CreationDesk({
                 if (!layoutSections.bottomComposer) toggleLayoutSection('bottomComposer');
               }}
               onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
+                if (event.key === 'Enter' && event.ctrlKey) {
                   event.preventDefault();
                   sendAssistantMessage();
+                  return;
+                }
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  handleGenerateAction();
                 }
               }}
-              placeholder={selectedCanvasNode ? t('composer.placeholderCanvas', '和 AI 说你想怎样延续这张画布：换背景、加产品、调整风格...') : t('composer.placeholder', '和 AI 说你的创作想法，它会帮你整理成可生成的提示词。')}
+              placeholder={selectedCanvasNode ? t('composer.placeholderCanvas', '写下要怎样延续这张图：换背景、加产品、调整风格... Enter 直接生成') : t('composer.placeholder', '写下提示词或创作想法，Enter 直接生成；点左侧小按钮才会调用 AI 优化。')}
             />
           </label>
           <div className="composerActionGroup">
@@ -6535,8 +6541,8 @@ function CreationDesk({
               className="composerAssistantAction"
               onClick={sendAssistantMessage}
               disabled={status === 'loading' || optimizingPrompt || caseResolving}
-              aria-label={t('composer.send', '发送到提示词助手，会调用对话模型并使用当前 Key 额度')}
-              title={t('composer.send', '发送到提示词助手，会调用对话模型并使用当前 Key 额度')}
+              aria-label={t('composer.send', '优化提示词，会调用对话模型并使用当前 Key 额度，不会直接生成图片')}
+              title={t('composer.send', '优化提示词，会调用对话模型并使用当前 Key 额度，不会直接生成图片')}
             >
               {optimizingPrompt ? <LoaderCircle className="spin" size={16} /> : <SendHorizontal size={16} />}
               <span>{t('composer.optimize', '优化')}</span>
