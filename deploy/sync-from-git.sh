@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="${REPO_URL:-https://github.com/margetrp-hub/image-sub2api-studio.git}"
+REPO_URL="${REPO_URL:-https://github.com/margetrp-hub/ai-image-workbench.git}"
 BRANCH="${BRANCH:-main}"
-REPO_DIR="${REPO_DIR:-/opt/image-sub2api-studio-repo}"
+REPO_DIR="${REPO_DIR:-/opt/ai-image-workbench-repo}"
 SERVICE_DIR="${SERVICE_DIR:-/opt/image-sub2api-studio}"
 STATIC_DIR="${STATIC_DIR:-/var/www/ohlaoo-studio}"
 DATA_DIR="${DATA_DIR:-/var/lib/image-sub2api-studio}"

@@ -17,7 +17,7 @@ Sub2API 是我最早接入的网关，因为它已经把账号、Key、额度、
 如果你也在做 AI 生图工作流，或者想一起讨论官方 API、自定义兼容接口、Sub2API、NewAPI、部署、模型调用、提示词工作流和后续改进，欢迎进 QQ 交流群：`260789529`。
 
 <p align="center">
-  <a href="https://github.com/margetrp-hub/image-sub2api-studio"><img src="https://img.shields.io/badge/project-ai--image--workbench-0f766e?style=flat-square" alt="project"></a>
+  <a href="https://github.com/margetrp-hub/ai-image-workbench"><img src="https://img.shields.io/badge/project-ai--image--workbench-0f766e?style=flat-square" alt="project"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-1f7268?style=flat-square" alt="MIT License"></a>
   <a href="./README.md"><img src="https://img.shields.io/badge/lang-English-blue?style=flat-square" alt="English"></a>
 </p>
@@ -170,10 +170,10 @@ VITE_DEV_AI_GATEWAY_PROXY_TARGET=https://gateway.example.com
 长期运行的 VPS 建议用 Git 同步部署：服务器直接拉仓库、构建、覆盖静态文件、更新服务并验证线上状态。
 
 ```bash
-cd /opt/image-sub2api-studio-repo
+cd /opt/ai-image-workbench-repo
 
 sudo BRANCH=main \
-  REPO_DIR=/opt/image-sub2api-studio-repo \
+  REPO_DIR=/opt/ai-image-workbench-repo \
   STATIC_DIR=/var/www/ohlaoo-studio \
   SERVICE_DIR=/opt/image-sub2api-studio \
   DATA_DIR=/var/lib/image-sub2api-studio \

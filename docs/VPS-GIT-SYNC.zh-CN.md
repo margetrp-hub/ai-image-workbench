@@ -15,7 +15,7 @@
 当前线上建议保持这些路径：
 
 ```text
-/opt/image-sub2api-studio-repo/    # Git 仓库 checkout
+/opt/ai-image-workbench-repo/    # Git 仓库 checkout
 /var/www/ohlaoo-studio/            # Nginx 实际读取的静态目录
 /opt/image-sub2api-studio/         # Node 历史/会话服务运行目录
 /var/lib/image-sub2api-studio/     # 历史图库、当前会话、队列任务、受保护素材库
@@ -35,17 +35,17 @@ sudo apt-get install -y git nodejs npm
 拉取仓库：
 
 ```bash
-sudo git clone https://github.com/margetrp-hub/image-sub2api-studio.git \
-  /opt/image-sub2api-studio-repo
+sudo git clone https://github.com/margetrp-hub/ai-image-workbench.git \
+  /opt/ai-image-workbench-repo
 ```
 
 执行同步部署：
 
 ```bash
-cd /opt/image-sub2api-studio-repo
+cd /opt/ai-image-workbench-repo
 
 sudo BRANCH=main \
-  REPO_DIR=/opt/image-sub2api-studio-repo \
+  REPO_DIR=/opt/ai-image-workbench-repo \
   STATIC_DIR=/var/www/ohlaoo-studio \
   SERVICE_DIR=/opt/image-sub2api-studio \
   DATA_DIR=/var/lib/image-sub2api-studio \
@@ -71,10 +71,10 @@ sudo BRANCH=main \
 以后每次仓库更新后，在 VPS 上只跑：
 
 ```bash
-cd /opt/image-sub2api-studio-repo
+cd /opt/ai-image-workbench-repo
 
 sudo BRANCH=main \
-  REPO_DIR=/opt/image-sub2api-studio-repo \
+  REPO_DIR=/opt/ai-image-workbench-repo \
   STATIC_DIR=/var/www/ohlaoo-studio \
   SERVICE_DIR=/opt/image-sub2api-studio \
   DATA_DIR=/var/lib/image-sub2api-studio \

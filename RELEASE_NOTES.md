@@ -4,7 +4,7 @@
 
 This release is the first step toward a real 1.0 beta, but it is intentionally not labeled 1.0 yet.
 
-The project is moving from `image-sub2api-studio` as a Sub2API-oriented starter into `AI Image Workbench`: a standalone image creation workstation that can run with an OpenAI-compatible gateway, while still keeping backward compatibility with existing Sub2API deployments.
+AI Image Workbench is moving from an early gateway-specific starter into a standalone image creation workstation that can run with an OpenAI-compatible gateway, while still keeping backward compatibility with existing Sub2API deployments.
 
 ### What Changed
 
@@ -46,7 +46,7 @@ This is a small repair release after the first 0.8 deployment.
 
 ## 0.8.0
 
-`0.8.0` turns `image-sub2api-studio` from a single-page image tool into a more complete Sub2API creation workstation.
+`0.8.0` turned the early single-page image tool into a more complete gateway-backed creation workstation.
 
 The main change is architectural: authenticated image generation can now be submitted as a server-side job through `/studio-api/generation-jobs`. The browser no longer needs to keep the original generation request alive for the result to be recoverable.
 
