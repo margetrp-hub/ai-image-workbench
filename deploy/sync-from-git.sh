@@ -10,7 +10,8 @@ DATA_DIR="${DATA_DIR:-/var/lib/image-sub2api-studio}"
 BASE_PATH="${BASE_PATH:-/studio/}"
 SERVICE_NAME="${SERVICE_NAME:-image-sub2api-studio-history}"
 LEGACY_SERVICE_NAME="${LEGACY_SERVICE_NAME:-ohlaoo-studio-history}"
-SUB2API_BASE_URL="${SUB2API_BASE_URL:-http://127.0.0.1:8080}"
+AI_GATEWAY_BASE_URL="${AI_GATEWAY_BASE_URL:-${SUB2API_BASE_URL:-http://127.0.0.1:8080}}"
+STUDIO_AUTH_MODE="${STUDIO_AUTH_MODE:-gateway}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8787/studio-api/health}"
 PUBLIC_STUDIO_URL="${PUBLIC_STUDIO_URL:-}"
 STUDIO_ALLOWED_ORIGINS="${STUDIO_ALLOWED_ORIGINS:-}"
@@ -114,7 +115,14 @@ allowed_origins() {
   node - "$PUBLIC_STUDIO_URL" "$STUDIO_ALLOWED_ORIGINS" <<'NODE'
 const publicUrl = String(process.argv[2] || '').trim();
 const configured = String(process.argv[3] || '').trim();
-const origins = new Set(['http://127.0.0.1:5173', 'http://localhost:5173']);
+const origins = new Set([
+  'http://127.0.0.1:5173',
+  'http://localhost:5173',
+  'http://127.0.0.1:5174',
+  'http://localhost:5174',
+  'http://127.0.0.1:5205',
+  'http://localhost:5205'
+]);
 
 for (const value of configured.split(',')) {
   const origin = value.trim().replace(/\/+$/, '');
@@ -200,7 +208,9 @@ UNIT_DROPIN_DIR="/etc/systemd/system/${SERVICE_NAME}.service.d"
 mkdir -p "$UNIT_DROPIN_DIR"
 cat > "$UNIT_DROPIN_DIR/10-sync-overrides.conf" <<EOF
 [Service]
-Environment="SUB2API_BASE_URL=$SUB2API_BASE_URL"
+Environment="AI_GATEWAY_BASE_URL=$AI_GATEWAY_BASE_URL"
+Environment="SUB2API_BASE_URL=$AI_GATEWAY_BASE_URL"
+Environment="STUDIO_AUTH_MODE=$STUDIO_AUTH_MODE"
 Environment="STUDIO_DATA_DIR=$DATA_DIR"
 Environment="STUDIO_LIBRARY_DIR=$DATA_DIR/library"
 Environment="STUDIO_LIBRARY_ASSET_DIR=$DATA_DIR/library/images"

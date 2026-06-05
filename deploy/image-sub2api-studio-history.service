@@ -1,12 +1,14 @@
 [Unit]
-Description=image-sub2api-studio per-user history and session service
+Description=AI Image Workbench history and session service
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/image-sub2api-studio
 Environment=NODE_ENV=production
+Environment=AI_GATEWAY_BASE_URL=http://127.0.0.1:8080
 Environment=SUB2API_BASE_URL=http://127.0.0.1:8080
+Environment=STUDIO_AUTH_MODE=gateway
 Environment=STUDIO_DATA_DIR=/var/lib/image-sub2api-studio
 Environment=STUDIO_LIBRARY_DIR=/var/lib/image-sub2api-studio/library
 Environment=STUDIO_LIBRARY_ASSET_DIR=/var/lib/image-sub2api-studio/library/images
@@ -15,6 +17,7 @@ Environment=STUDIO_HISTORY_PORT=8787
 Environment=STUDIO_ALLOWED_ORIGINS=https://studio.example.com
 Environment=STUDIO_JOB_LIMIT=120
 Environment=STUDIO_JOB_TIMEOUT_MS=2700000
+Environment=STUDIO_JOB_CONCURRENCY=1
 ExecStart=/usr/bin/node /opt/image-sub2api-studio/scripts/image-sub2api-studio-history-service.mjs
 Restart=always
 RestartSec=3

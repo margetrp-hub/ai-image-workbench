@@ -1,14 +1,14 @@
 # 致谢与参考边界
 
-`image-sub2api-studio` 是一个面向 Sub2API 生图接口的独立前端工作站。
+AI Image Workbench 是一个面向 OpenAI 兼容图片生成和编辑网关的独立前端工作站。
 
 本项目在产品思路、提示词模板和实现方式上参考了社区提示词案例、公开 AI 创作工作流和开源前端工具。这些内容属于学习参考和提示词来源参考，不代表关联、赞助、代码归属、素材归属，也不代表本仓库是其他项目的分支。
 
 ## 本项目负责的内容
 
-- `studio.html` 和 `src/studio.jsx` 中面向 Sub2API 的创作工作流。
+- `studio.html` 和 `src/studio.jsx` 中的创作工作流。
 - 图片和视频工作台 UI、参数控制、参考图上传、Key 打码展示和历史图库面板。
-- `src/sub2apiClient.js` 中的 Sub2API 接入逻辑。
+- `src/aiGatewayClient.js` 中的 OpenAI 兼容网关接入逻辑。
 - `scripts/image-sub2api-studio-history-service.mjs` 中的可选用户历史图库服务。
 - `deploy/`、Docker、Nginx 相关部署示例。
 - `docs/screenshots/` 中展示本项目界面的截图。

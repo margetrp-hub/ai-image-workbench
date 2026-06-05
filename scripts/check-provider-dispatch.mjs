@@ -1,0 +1,148 @@
+import {
+  IMAGE_PROVIDER_REGISTRY,
+  PROVIDER_ADAPTER_TYPES,
+  PROVIDER_ROUTE_MODES,
+  resolveProviderAdapter,
+  resolveImageEditDispatch,
+  resolveImageGenerationDispatch
+} from '../src/studio/providers/index.js';
+
+const EXPECTED_GENERATION_ENDPOINT = '/v1/images/generations';
+const EXPECTED_EDIT_ENDPOINT = '/v1/images/edits';
+const EXPECTED_RESPONSES_ENDPOINT = '/v1/responses';
+
+const failures = [];
+const rows = [];
+
+for (const provider of IMAGE_PROVIDER_REGISTRY) {
+  const generation = resolveImageGenerationDispatch({
+    providerId: provider.id,
+    authMode: provider.authMode,
+    requestedRoute: PROVIDER_ROUTE_MODES.AUTO
+  });
+  const edit = resolveImageEditDispatch({
+    providerId: provider.id,
+    authMode: provider.authMode
+  });
+  const adapter = resolveProviderAdapter({
+    providerId: provider.id,
+    authMode: provider.authMode
+  });
+  const generationPlan = adapter.buildGenerationPlan({
+    requestedRoute: PROVIDER_ROUTE_MODES.AUTO
+  });
+  const editPlan = adapter.buildEditPlan();
+  const parameters = provider.parameters || {};
+
+  rows.push({
+    provider: provider.id,
+    auth: provider.authMode,
+    generation: generation.endpoint,
+    generationTransport: generation.transport,
+    edit: edit.endpoint,
+    editTransport: edit.transport,
+    generationPlan: generationPlan.endpoint,
+    editPlan: editPlan.endpoint
+  });
+
+  if (generation.transport !== PROVIDER_ROUTE_MODES.IMAGES) {
+    failures.push(`${provider.id}: auto generation transport must be images, got ${generation.transport}`);
+  }
+  if (generation.endpoint !== EXPECTED_GENERATION_ENDPOINT) {
+    failures.push(`${provider.id}: auto generation endpoint must be ${EXPECTED_GENERATION_ENDPOINT}, got ${generation.endpoint}`);
+  }
+  if (edit.transport !== PROVIDER_ROUTE_MODES.IMAGES) {
+    failures.push(`${provider.id}: edit transport must be images, got ${edit.transport}`);
+  }
+  if (edit.endpoint !== EXPECTED_EDIT_ENDPOINT) {
+    failures.push(`${provider.id}: edit endpoint must be ${EXPECTED_EDIT_ENDPOINT}, got ${edit.endpoint}`);
+  }
+  if (generationPlan.transport !== PROVIDER_ROUTE_MODES.IMAGES) {
+    failures.push(`${provider.id}: adapter auto generation transport must be images, got ${generationPlan.transport}`);
+  }
+  if (generationPlan.endpoint !== EXPECTED_GENERATION_ENDPOINT) {
+    failures.push(`${provider.id}: adapter auto generation endpoint must be ${EXPECTED_GENERATION_ENDPOINT}, got ${generationPlan.endpoint}`);
+  }
+  if (editPlan.transport !== PROVIDER_ROUTE_MODES.IMAGES) {
+    failures.push(`${provider.id}: adapter edit transport must be images, got ${editPlan.transport}`);
+  }
+  if (editPlan.endpoint !== EXPECTED_EDIT_ENDPOINT) {
+    failures.push(`${provider.id}: adapter edit endpoint must be ${EXPECTED_EDIT_ENDPOINT}, got ${editPlan.endpoint}`);
+  }
+  if (!Array.isArray(parameters.sizes) || !parameters.sizes.length) {
+    failures.push(`${provider.id}: provider parameters must declare supported sizes`);
+  }
+  if (!Array.isArray(parameters.qualities) || !parameters.qualities.length) {
+    failures.push(`${provider.id}: provider parameters must declare supported qualities`);
+  }
+  if (!Array.isArray(parameters.outputFormats) || !parameters.outputFormats.length) {
+    failures.push(`${provider.id}: provider parameters must declare output formats`);
+  }
+  if (!Array.isArray(parameters.resolutionTiers) || !parameters.resolutionTiers.length) {
+    failures.push(`${provider.id}: provider parameters must declare resolution tiers`);
+  }
+  if (!Array.isArray(parameters.countRange) || parameters.countRange.length !== 2 || Number(parameters.countRange[0]) < 1 || Number(parameters.countRange[1]) < Number(parameters.countRange[0])) {
+    failures.push(`${provider.id}: provider parameters must declare a valid countRange`);
+  }
+  if (!parameters.defaultImageModel) {
+    failures.push(`${provider.id}: provider parameters must declare defaultImageModel`);
+  }
+  if (!provider.adapterType) {
+    failures.push(`${provider.id}: provider must explicitly declare adapterType`);
+  }
+  if (!Object.values(PROVIDER_ADAPTER_TYPES).includes(provider.adapterType)) {
+    failures.push(`${provider.id}: provider adapterType is not registered: ${provider.adapterType}`);
+  }
+  if (generationPlan.adapterType !== provider.adapterType) {
+    failures.push(`${provider.id}: generation plan adapterType must match registry adapterType`);
+  }
+  if (editPlan.adapterType !== provider.adapterType) {
+    failures.push(`${provider.id}: edit plan adapterType must match registry adapterType`);
+  }
+}
+
+const explicitResponses = resolveImageGenerationDispatch({
+  providerId: 'openai-compatible',
+  authMode: 'manual',
+  requestedRoute: PROVIDER_ROUTE_MODES.RESPONSES
+});
+const explicitResponsesPlan = resolveProviderAdapter({
+  providerId: 'openai-compatible',
+  authMode: 'manual'
+}).buildGenerationPlan({
+  requestedRoute: PROVIDER_ROUTE_MODES.RESPONSES
+});
+
+rows.push({
+  provider: 'openai-compatible',
+  auth: 'manual',
+  generation: explicitResponses.endpoint,
+  generationTransport: explicitResponses.transport,
+  edit: '-',
+  editTransport: '-',
+  generationPlan: explicitResponsesPlan.endpoint,
+  editPlan: '-',
+  note: 'explicit responses compatibility'
+});
+
+if (explicitResponses.transport !== PROVIDER_ROUTE_MODES.RESPONSES) {
+  failures.push(`explicit responses transport must be responses, got ${explicitResponses.transport}`);
+}
+if (explicitResponses.endpoint !== EXPECTED_RESPONSES_ENDPOINT) {
+  failures.push(`explicit responses endpoint must be ${EXPECTED_RESPONSES_ENDPOINT}, got ${explicitResponses.endpoint}`);
+}
+if (explicitResponsesPlan.transport !== PROVIDER_ROUTE_MODES.RESPONSES) {
+  failures.push(`adapter explicit responses transport must be responses, got ${explicitResponsesPlan.transport}`);
+}
+if (explicitResponsesPlan.endpoint !== EXPECTED_RESPONSES_ENDPOINT) {
+  failures.push(`adapter explicit responses endpoint must be ${EXPECTED_RESPONSES_ENDPOINT}, got ${explicitResponsesPlan.endpoint}`);
+}
+
+console.table(rows);
+
+if (failures.length) {
+  console.error(`Provider dispatch contract failed:\n${failures.map((item) => `- ${item}`).join('\n')}`);
+  process.exit(1);
+}
+
+console.log('Provider dispatch contract passed.');

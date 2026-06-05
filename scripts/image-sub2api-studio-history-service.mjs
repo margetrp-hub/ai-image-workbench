@@ -11,18 +11,22 @@ const HOST = process.env.HOST || process.env.STUDIO_HISTORY_HOST || '127.0.0.1';
 const DATA_DIR = path.resolve(process.env.STUDIO_DATA_DIR || path.join(__dirname, '..', '.image-sub2api-studio-data'));
 const LIBRARY_DIR = path.resolve(process.env.STUDIO_LIBRARY_DIR || path.join(__dirname, '..', 'data'));
 const LIBRARY_ASSET_DIR = path.resolve(process.env.STUDIO_LIBRARY_ASSET_DIR || path.join(LIBRARY_DIR, 'images'));
-const SUB2API_BASE_URL = String(process.env.SUB2API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
+const AUTH_MODE = String(process.env.STUDIO_AUTH_MODE || 'gateway').toLowerCase();
+const AI_GATEWAY_BASE_URL = String(process.env.AI_GATEWAY_BASE_URL || process.env.SUB2API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/+$/, '');
 const HISTORY_LIMIT = Number(process.env.STUDIO_HISTORY_LIMIT || 200);
 const SESSION_NODE_LIMIT = Number(process.env.STUDIO_SESSION_NODE_LIMIT || 80);
 const SESSION_URL_LIMIT = Number(process.env.STUDIO_SESSION_URL_LIMIT || 24);
+const SESSION_QUEUE_LIMIT = Number(process.env.STUDIO_SESSION_QUEUE_LIMIT || 12);
+const SESSION_MESSAGE_LIMIT = Number(process.env.STUDIO_SESSION_MESSAGE_LIMIT || 24);
 const SESSION_ASSET_ID = 'session-current';
 const JOB_LIMIT = Number(process.env.STUDIO_JOB_LIMIT || 120);
 const JOB_TIMEOUT_MS = Number(process.env.STUDIO_JOB_TIMEOUT_MS || 45 * 60 * 1000);
+const JOB_CONCURRENCY = Math.max(1, Math.min(6, Number(process.env.STUDIO_JOB_CONCURRENCY || 1)));
 const JOB_ACTIVE_STATUSES = new Set(['queued', 'dispatching', 'upstream', 'saving']);
 const SERVICE_STARTED_AT = Date.now();
 const MAX_BODY_BYTES = Number(process.env.STUDIO_MAX_BODY_BYTES || 96 * 1024 * 1024);
 const MAX_IMAGE_BYTES = Number(process.env.STUDIO_MAX_IMAGE_BYTES || 32 * 1024 * 1024);
-const ALLOWED_ORIGINS = String(process.env.STUDIO_ALLOWED_ORIGINS || 'http://127.0.0.1:5173,http://localhost:5173')
+const ALLOWED_ORIGINS = String(process.env.STUDIO_ALLOWED_ORIGINS || 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5205,http://localhost:5205,http://127.0.0.1:5174,http://localhost:5174')
   .split(',')
   .map((item) => item.trim().replace(/\/+$/, ''))
   .filter(Boolean);
@@ -241,6 +245,7 @@ const VIDEO_INSPIRATIONS = [
 
 const jobQueues = new Map();
 const activeJobControllers = new Map();
+const jobStorageLocks = new Map();
 
 function sendJson(res, status, payload) {
   res.writeHead(status, {
@@ -284,25 +289,29 @@ async function readJsonBody(req) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-function normalizeSub2ApiPayload(payload) {
+function parseJsonText(raw) {
+  return JSON.parse(String(raw || '').replace(/^\uFEFF/, ''));
+}
+
+function normalizeGatewayAccountPayload(payload) {
   if (payload && typeof payload === 'object' && 'code' in payload) {
     if (payload.code === 0) return payload.data;
-    throw new Error(payload.message || 'SUB2API_AUTH_FAILED');
+    throw new Error(payload.message || 'GATEWAY_AUTH_FAILED');
   }
   return payload;
 }
 
-async function sub2apiRequest(pathname, token) {
-  const response = await fetch(`${SUB2API_BASE_URL}${pathname}`, {
+async function gatewayAccountRequest(pathname, token) {
+  const response = await fetch(`${AI_GATEWAY_BASE_URL}${pathname}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(payload?.message || `SUB2API_HTTP_${response.status}`);
+    const error = new Error(payload?.message || `GATEWAY_HTTP_${response.status}`);
     error.status = response.status;
     throw error;
   }
-  return normalizeSub2ApiPayload(payload);
+  return normalizeGatewayAccountPayload(payload);
 }
 
 async function authenticate(req) {
@@ -313,11 +322,20 @@ async function authenticate(req) {
     throw error;
   }
 
+  if (AUTH_MODE === 'local') {
+    const key = createHash('sha256').update(`local:${token}`).digest('hex');
+    return {
+      user: { id: 'local-workspace', username: 'Local Workspace' },
+      userKey: key,
+      userDir: path.join(DATA_DIR, 'users', key)
+    };
+  }
+
   let user;
   try {
-    user = await sub2apiRequest('/api/v1/auth/me', token);
+    user = await gatewayAccountRequest('/api/v1/auth/me', token);
   } catch {
-    user = await sub2apiRequest('/api/v1/user/profile', token);
+    user = await gatewayAccountRequest('/api/v1/user/profile', token);
   }
 
   const userId = user?.id || user?.user?.id || user?.email || user?.username;
@@ -355,7 +373,7 @@ function jobsPath(auth) {
 async function readRecords(auth) {
   try {
     const raw = await fs.readFile(recordsPath(auth), 'utf8');
-    const parsed = JSON.parse(raw);
+    const parsed = parseJsonText(raw);
     return Array.isArray(parsed) ? parsed : [];
   } catch (error) {
     if (error.code === 'ENOENT') return [];
@@ -371,7 +389,7 @@ async function writeRecords(auth, records) {
 async function readSession(auth) {
   try {
     const raw = await fs.readFile(sessionPath(auth), 'utf8');
-    const parsed = JSON.parse(raw);
+    const parsed = parseJsonText(raw);
     return parsed && typeof parsed === 'object' ? parsed : null;
   } catch (error) {
     if (error.code === 'ENOENT') return null;
@@ -418,35 +436,80 @@ function normalizeJobForRead(auth, job) {
   return job;
 }
 
-async function readJobs(auth) {
+async function withUserJobLock(auth, action) {
+  const previous = jobStorageLocks.get(auth.userKey) || Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  jobStorageLocks.set(auth.userKey, previous.then(() => current, () => current));
+  await previous.catch(() => {});
+  try {
+    return await action();
+  } finally {
+    release();
+    if (jobStorageLocks.get(auth.userKey) === current) {
+      jobStorageLocks.delete(auth.userKey);
+    }
+  }
+}
+
+async function readJobsUnlocked(auth) {
   try {
     const raw = await fs.readFile(jobsPath(auth), 'utf8');
-    const parsed = JSON.parse(raw);
+    const parsed = parseJsonText(raw);
     const jobs = Array.isArray(parsed) ? parsed : [];
-    return jobs.map((job) => normalizeJobForRead(auth, job)).filter(Boolean);
+    let changed = false;
+    const normalized = jobs.map((job) => {
+      const nextJob = normalizeJobForRead(auth, job);
+      if (nextJob && nextJob !== job) changed = true;
+      return nextJob;
+    }).filter(Boolean);
+    if (changed) {
+      await writeJobsUnlocked(auth, normalized);
+    }
+    return normalized;
   } catch (error) {
     if (error.code === 'ENOENT') return [];
     throw error;
   }
 }
 
-async function writeJobs(auth, jobs) {
+async function readJobs(auth) {
+  return withUserJobLock(auth, () => readJobsUnlocked(auth));
+}
+
+async function writeJobsUnlocked(auth, jobs) {
   await ensureUserDirs(auth);
   await fs.writeFile(jobsPath(auth), JSON.stringify(jobs.slice(0, JOB_LIMIT), null, 2));
 }
 
+async function writeJobs(auth, jobs) {
+  return withUserJobLock(auth, () => writeJobsUnlocked(auth, jobs));
+}
+
 async function updateJob(auth, jobId, patch) {
-  const jobs = await readJobs(auth);
-  const index = jobs.findIndex((job) => job.id === jobId);
-  if (index < 0) return null;
-  const nextJob = {
-    ...jobs[index],
-    ...patch,
-    updatedAt: new Date().toISOString()
-  };
-  const nextJobs = [nextJob, ...jobs.filter((job) => job.id !== jobId)];
-  await writeJobs(auth, nextJobs);
-  return nextJob;
+  return withUserJobLock(auth, async () => {
+    const jobs = await readJobsUnlocked(auth);
+    const index = jobs.findIndex((job) => job.id === jobId);
+    if (index < 0) return null;
+    const nextJob = {
+      ...jobs[index],
+      ...patch,
+      updatedAt: new Date().toISOString()
+    };
+    const nextJobs = [nextJob, ...jobs.filter((job) => job.id !== jobId)];
+    await writeJobsUnlocked(auth, nextJobs);
+    return nextJob;
+  });
+}
+
+async function upsertJob(auth, job) {
+  return withUserJobLock(auth, async () => {
+    const jobs = await readJobsUnlocked(auth);
+    await writeJobsUnlocked(auth, [job, ...jobs.filter((item) => item.id !== job.id)].slice(0, JOB_LIMIT));
+    return job;
+  });
 }
 
 function text(value, length) {
@@ -503,7 +566,7 @@ async function storeSessionUrl(auth, value, index) {
 
 async function readJsonFile(filePath, fallback = {}) {
   try {
-    return JSON.parse(await fs.readFile(filePath, 'utf8'));
+    return parseJsonText(await fs.readFile(filePath, 'utf8'));
   } catch (error) {
     if (error.code === 'ENOENT') return fallback;
     throw error;
@@ -634,6 +697,38 @@ function sanitizeSessionObject(value) {
   return { ...value };
 }
 
+function sanitizeAssistantMessages(items) {
+  const source = Array.isArray(items) ? items.slice(-SESSION_MESSAGE_LIMIT) : [];
+  return source
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      id: text(item.id || randomUUID(), 120),
+      role: item.role === 'assistant' ? 'assistant' : 'user',
+      content: text(item.content, 8000),
+      finalPrompt: text(item.finalPrompt, 12000),
+      pending: Boolean(item.pending),
+      failed: Boolean(item.failed)
+    }))
+    .filter((item) => item.content || item.finalPrompt);
+}
+
+function sanitizePromptSuggestion(value) {
+  if (!value || typeof value !== 'object') return null;
+  const suggestion = {
+    subject: text(value.subject, 2000),
+    scene: text(value.scene, 2000),
+    composition: text(value.composition, 2000),
+    style: text(value.style, 2000),
+    lighting: text(value.lighting, 2000),
+    details: text(value.details, 3000),
+    textRules: text(value.textRules, 2000),
+    constraints: text(value.constraints, 3000),
+    finalPrompt: text(value.finalPrompt, 12000),
+    raw: text(value.raw, 16000)
+  };
+  return Object.values(suggestion).some(Boolean) ? suggestion : null;
+}
+
 function sanitizeCanvasView(value) {
   if (!value || typeof value !== 'object') return { x: 0, y: 0, zoom: 1 };
   const x = Number(value.x);
@@ -683,6 +778,8 @@ async function sanitizeCanvasNodes(auth, nodes, assetIndex) {
     }
     const x = Number(node.x);
     const y = Number(node.y);
+    const width = Number(node.width);
+    const height = Number(node.height);
     const canvasIndex = Math.round(Number(node.canvasIndex));
     result.push({
       id: text(node.id || randomUUID(), 120),
@@ -690,10 +787,15 @@ async function sanitizeCanvasNodes(auth, nodes, assetIndex) {
       canvasIndex: Number.isFinite(canvasIndex) ? canvasIndex : result.length + 1,
       kind: text(node.kind || 'image', 40),
       url,
+      persistedUrl: url,
+      sourceUrl: text(node.sourceUrl, 1200),
       prompt: text(node.prompt, 6000),
+      generationPrompt: text(node.generationPrompt || node.prompt, 6000),
       title: text(node.title, 160),
       x: Number.isFinite(x) ? Math.max(-8000, Math.min(8000, x)) : 0,
       y: Number.isFinite(y) ? Math.max(-8000, Math.min(8000, y)) : 0,
+      width: Number.isFinite(width) ? Math.max(240, Math.min(620, Math.round(width))) : undefined,
+      height: Number.isFinite(height) ? Math.max(200, Math.min(520, Math.round(height))) : undefined,
       createdAt: node.createdAt && !Number.isNaN(Date.parse(node.createdAt)) ? node.createdAt : new Date().toISOString(),
       downloadMeta: sanitizeDownloadMeta(node.downloadMeta)
     });
@@ -711,6 +813,56 @@ function sanitizeCanvasCustomLinks(links) {
       createdAt: link?.createdAt && !Number.isNaN(Date.parse(link.createdAt)) ? link.createdAt : new Date().toISOString()
     }))
     .filter((link) => link.fromId && link.toId);
+}
+
+function sanitizeGenerationQueue(items) {
+  const source = Array.isArray(items) ? items.slice(-SESSION_QUEUE_LIMIT) : [];
+  return source
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => ({
+      id: text(item.id || randomUUID(), 120),
+      serverJobId: text(item.serverJobId, 120),
+      remote: Boolean(item.remote),
+      status: text(item.status || 'queued', 40),
+      createdAt: Number(item.createdAt || Date.now()),
+      startedAt: item.startedAt ? Number(item.startedAt) : null,
+      completedAt: item.completedAt ? Number(item.completedAt) : null,
+      mode: text(item.mode || 'image', 40),
+      providerId: text(item.providerId || item.provider || '', 160),
+      providerFamily: text(item.providerFamily || item.providerId || item.provider || '', 160),
+      apiKeySource: text(item.apiKeySource || '', 60),
+      providerLabel: text(item.providerLabel || '', 160),
+      prompt: text(item.prompt, 12000),
+      model: text(item.model, 160),
+      aspect: text(item.aspect || item.aspectRatio, 40),
+      aspectRatio: text(item.aspectRatio || item.aspect, 40),
+      customSize: text(item.customSize, 40),
+      size: text(item.size, 40),
+      quality: text(item.quality, 40),
+      resolutionTier: text(item.resolutionTier, 40),
+      outputFormat: text(item.outputFormat, 20),
+      moderation: text(item.moderation, 40),
+      count: Math.max(1, Math.min(4, Number(item.count || 1))),
+      selectedCanvasNodeId: text(item.selectedCanvasNodeId, 120),
+      selectedCanvasNodeSnapshot: sanitizeSessionObject(item.selectedCanvasNodeSnapshot),
+      referencesOpen: Boolean(item.referencesOpen),
+      summary: text(item.summary || item.prompt, 260),
+      restorable: Boolean(item.restorable),
+      restored: Boolean(item.restored),
+      stage: text(item.stage, 40),
+      completed: Math.max(0, Math.min(4, Number(item.completed || 0))),
+      total: Math.max(1, Math.min(4, Number(item.total || item.count || 1))),
+      resultUrls: Array.isArray(item.resultUrls) ? item.resultUrls.slice(0, 4).map((value) => text(value, 1200)).filter(Boolean) : [],
+      requestIds: Array.isArray(item.requestIds) ? item.requestIds.slice(0, 8).map((value) => text(value, 160)).filter(Boolean) : [],
+      error: item.error && typeof item.error === 'object'
+        ? {
+          code: text(item.error.code, 120),
+          status: item.error.status || null,
+          requestId: text(item.error.requestId, 160),
+          message: text(item.error.message, 1200)
+        }
+        : null
+    }));
 }
 
 async function pruneSessionAssets(auth, session) {
@@ -744,6 +896,7 @@ async function sanitizeSession(auth, body) {
     resultBatchMeta: sanitizeSessionObject(body.resultBatchMeta),
     canvasNodes,
     canvasCustomLinks: sanitizeCanvasCustomLinks(body.canvasCustomLinks),
+    generationQueue: sanitizeGenerationQueue(body.generationQueue),
     selectedCanvasNodeId: text(body.selectedCanvasNodeId, 120),
     canvasEditorNodeId: text(body.canvasEditorNodeId, 120),
     canvasView: sanitizeCanvasView(body.canvasView),
@@ -751,6 +904,8 @@ async function sanitizeSession(auth, body) {
     message: text(body.message, 1000),
     progress: sanitizeSessionObject(body.progress),
     timing: sanitizeSessionObject(body.timing),
+    assistantMessages: sanitizeAssistantMessages(body.assistantMessages),
+    promptSuggestion: sanitizePromptSuggestion(body.promptSuggestion),
     selectedCase: sanitizeCase(body.selectedCase),
     parameters: sanitizeSessionObject(body.parameters)
   };
@@ -772,10 +927,22 @@ async function sanitizeRecord(auth, body) {
     sessionId: text(body.sessionId, 120),
     createdAt: body.createdAt && !Number.isNaN(Date.parse(body.createdAt)) ? body.createdAt : new Date().toISOString(),
     mode: text(body.mode || 'image', 40),
+    kind: text(body.kind || body.mode || 'image', 40),
+    providerId: text(body.providerId || body.provider || '', 160),
+    providerFamily: text(body.providerFamily || body.providerId || body.provider || '', 160),
+    apiKeySource: text(body.apiKeySource || '', 60),
+    providerLabel: text(body.providerLabel || '', 160),
     prompt: text(body.prompt, 6000),
+    generationPrompt: text(body.generationPrompt || body.prompt, 6000),
     model: text(body.model, 120),
     size: text(body.size, 40),
     quality: text(body.quality, 40),
+    outputFormat: text(body.outputFormat || body.output_format || '', 20),
+    moderation: text(body.moderation || '', 40),
+    requestIds: Array.isArray(body.requestIds) ? body.requestIds.slice(0, 8).map((value) => text(value, 160)).filter(Boolean) : [],
+    usageSummary: text(body.usageSummary || body.costSummary || '', 240),
+    costSummary: text(body.costSummary || '', 240),
+    timing: sanitizeSessionObject(body.timing),
     count: Math.max(1, Math.min(4, Number(body.count || 1))),
     resultUrls,
     case: sanitizeCase(body.case)
@@ -788,7 +955,7 @@ function cleanJobId(value) {
 }
 
 function normalizeGatewayBaseUrl(value) {
-  const raw = String(value || SUB2API_BASE_URL).replace(/\/+$/, '');
+  const raw = String(value || AI_GATEWAY_BASE_URL).replace(/\/+$/, '');
   if (raw.endsWith('/v1')) return raw;
   return `${raw}/v1`;
 }
@@ -840,7 +1007,7 @@ async function readGatewayResponse(response) {
   const raw = await response.text();
   let payload = {};
   try {
-    payload = raw ? JSON.parse(raw) : {};
+    payload = raw ? parseJsonText(raw) : {};
   } catch {
     payload = { message: raw.slice(0, 1200) };
   }
@@ -851,6 +1018,8 @@ async function readGatewayResponse(response) {
     error.requestId = gatewayRequestId(payload, response.headers);
     throw error;
   }
+  const requestId = gatewayRequestId(payload, response.headers);
+  if (requestId && !payload.request_id) payload.request_id = requestId;
   return payload;
 }
 
@@ -911,6 +1080,10 @@ function buildJobRecord(body) {
     mode,
     route,
     endpoint: route === 'edits' ? '/v1/images/edits' : '/v1/images/generations',
+    providerId: text(request.providerId || request.provider || '', 160),
+    providerFamily: text(request.providerFamily || request.providerId || request.provider || '', 160),
+    apiKeySource: text(request.apiKeySource || '', 60),
+    providerLabel: text(request.providerLabel || '', 160),
     model: text(request.model, 160),
     prompt: text(request.prompt, 12000),
     generationPrompt: text(request.generationPrompt || request.prompt, 12000),
@@ -948,7 +1121,7 @@ function buildJobRuntime(body) {
   }
   return {
     apiKey,
-    gatewayBaseUrl: normalizeGatewayBaseUrl(body.gatewayBaseUrl || request.gatewayBaseUrl || SUB2API_BASE_URL),
+    gatewayBaseUrl: normalizeGatewayBaseUrl(body.gatewayBaseUrl || request.gatewayBaseUrl || AI_GATEWAY_BASE_URL),
     images: (Array.isArray(body.images) ? body.images : []).slice(0, 4).map(normalizeImageInput).filter(Boolean),
     mask: body.mask ? normalizeImageInput(body.mask, 0) : null
   };
@@ -962,12 +1135,22 @@ async function writeHistoryRecordForJob(auth, job) {
     sessionId: job.sessionId,
     createdAt: job.createdAt,
     mode: job.mode,
+    providerId: job.providerId,
+    providerFamily: job.providerFamily,
+    apiKeySource: job.apiKeySource,
+    providerLabel: job.providerLabel,
     prompt: job.prompt,
+    generationPrompt: job.generationPrompt || job.prompt,
     model: job.model,
     size: job.size,
     quality: job.quality,
+    outputFormat: job.outputFormat,
+    moderation: job.moderation,
     count: job.count,
     resultUrls: job.resultUrls,
+    requestIds: Array.isArray(job.requestIds) ? job.requestIds : [],
+    usageSummary: job.usage ? JSON.stringify(job.usage).slice(0, 240) : '',
+    timing: job.timing || null,
     case: null
   };
   await writeRecords(auth, [record, ...records.filter((item) => item.id !== record.id)].slice(0, HISTORY_LIMIT));
@@ -1005,6 +1188,7 @@ async function postMultipartToGateway(url, apiKey, form, clientRequestId, signal
 async function runGenerationRequest(auth, job, runtime, signal) {
   const resultUrls = [];
   const requestIds = [];
+  const usages = [];
   const total = Math.max(1, Number(job.count || 1));
   if (job.route === 'edits') {
     const form = new FormData();
@@ -1028,7 +1212,8 @@ async function runGenerationRequest(auth, job, runtime, signal) {
       if (stored) resultUrls.push(stored);
     }
     requestIds.push(gatewayRequestId(payload));
-    return { resultUrls, requestIds, usage: payload?.usage || null };
+    if (payload?.usage) usages.push(payload.usage);
+    return { resultUrls, requestIds, usage: usages[0] || null };
   }
 
   for (let index = 0; index < total; index += 1) {
@@ -1050,6 +1235,7 @@ async function runGenerationRequest(auth, job, runtime, signal) {
       if (stored) resultUrls.push(stored);
     }
     requestIds.push(gatewayRequestId(payload));
+    if (payload?.usage) usages.push(payload.usage);
     await updateJob(auth, job.id, {
       status: 'upstream',
       stage: 'upstream',
@@ -1058,7 +1244,7 @@ async function runGenerationRequest(auth, job, runtime, signal) {
       requestIds: requestIds.filter(Boolean)
     });
   }
-  return { resultUrls, requestIds, usage: null };
+  return { resultUrls, requestIds, usage: usages.length === 1 ? usages[0] : usages.length ? usages : null };
 }
 
 async function runGenerationJob(auth, jobId, runtime) {
@@ -1139,7 +1325,7 @@ async function runGenerationJob(auth, jobId, runtime) {
 }
 
 function enqueueGenerationJob(auth, job, runtime) {
-  const queue = jobQueues.get(auth.userKey) || { running: false, items: [] };
+  const queue = jobQueues.get(auth.userKey) || { running: 0, draining: false, items: [] };
   queue.items.push({ auth, jobId: job.id, runtime });
   jobQueues.set(auth.userKey, queue);
   setTimeout(() => drainGenerationQueue(auth.userKey), 0);
@@ -1147,16 +1333,19 @@ function enqueueGenerationJob(auth, job, runtime) {
 
 async function drainGenerationQueue(userKey) {
   const queue = jobQueues.get(userKey);
-  if (!queue || queue.running) return;
-  queue.running = true;
-  try {
-    while (queue.items.length) {
-      const item = queue.items.shift();
-      await runGenerationJob(item.auth, item.jobId, item.runtime);
-    }
-  } finally {
-    queue.running = false;
+  if (!queue || queue.draining) return;
+  queue.draining = true;
+  while (queue.items.length && queue.running < JOB_CONCURRENCY) {
+    const item = queue.items.shift();
+    queue.running += 1;
+    runGenerationJob(item.auth, item.jobId, item.runtime)
+      .catch(() => {})
+      .finally(() => {
+        queue.running = Math.max(0, queue.running - 1);
+        setTimeout(() => drainGenerationQueue(userKey), 0);
+      });
   }
+  queue.draining = false;
 }
 
 async function removeRecordAssets(auth, recordId) {
@@ -1284,8 +1473,7 @@ async function handler(req, res) {
       if (job.route === 'edits' && !runtime.images.length) {
         return sendJson(res, 400, { ok: false, error: 'REFERENCE_IMAGE_REQUIRED' });
       }
-      const jobs = await readJobs(auth);
-      await writeJobs(auth, [job, ...jobs.filter((item) => item.id !== job.id)].slice(0, JOB_LIMIT));
+      await upsertJob(auth, job);
       enqueueGenerationJob(auth, job, runtime);
       return sendJson(res, 202, { ok: true, job });
     }
@@ -1419,5 +1607,5 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`image-sub2api-studio history service listening on http://${HOST}:${PORT}/studio-api`);
   console.log(`Data directory: ${DATA_DIR}`);
-  console.log(`Sub2API base URL: ${SUB2API_BASE_URL}`);
+  console.log(`AI gateway base URL: ${AI_GATEWAY_BASE_URL}`);
 });

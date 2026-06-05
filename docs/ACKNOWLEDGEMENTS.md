@@ -1,14 +1,14 @@
 # Acknowledgements and Reference Boundaries
 
-`image-sub2api-studio` is an independent front-end workstation for Sub2API image generation.
+AI Image Workbench is an independent front-end workstation for OpenAI-compatible image generation and editing gateways.
 
 The project was informed by community prompt examples, public AI creation workflows, and open-source frontend tooling. These references helped with product thinking, prompt template design, and implementation choices. They do not imply affiliation, sponsorship, code ownership, asset ownership, or that this repository is a fork of those projects.
 
 ## What This Project Owns
 
-- The Sub2API-oriented creation workflow in `studio.html` and `src/studio.jsx`.
+- The creation workflow in `studio.html` and `src/studio.jsx`.
 - The image and video workspace UI, parameter controls, reference upload flow, masked key display, and history panel.
-- The Sub2API client glue in `src/sub2apiClient.js`.
+- The OpenAI-compatible gateway client glue in `src/aiGatewayClient.js`.
 - The optional per-user history service in `scripts/image-sub2api-studio-history-service.mjs`.
 - The deployment examples under `deploy/`, Docker, and Nginx documentation.
 - The screenshots under `docs/screenshots/`, which show this project's own UI.

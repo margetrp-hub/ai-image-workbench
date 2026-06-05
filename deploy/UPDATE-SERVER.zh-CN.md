@@ -1,49 +1,37 @@
-# 服务器更新：只更新核心包，不重复上传图库
+# 旧 zip 包更新说明
 
-适用场景：服务器上的图片库已经上传完整，后续只是更新页面、JS/CSS、JSON 数据或工作台功能。
+这份文档只保留给无法直接从 GitHub 拉取代码的临时场景。长期 VPS 部署请优先使用：
 
-> 长期 VPS 推荐改用 Git 同步部署，不再手动上传 zip。见 `docs/VPS-GIT-SYNC.zh-CN.md`。
+```text
+docs/VPS-GIT-SYNC.zh-CN.md
+deploy/sync-from-git.sh
+```
 
-## 结论
+Git 同步方式会在服务器本地构建、覆盖正确的 Nginx 静态目录、更新历史/会话服务，并保留 `/var/lib/image-sub2api-studio` 持久化数据目录。
 
-- 不要每次重新上传 `images/` 图库。
-- 日常更新先上传 `image-sub2api-studio-core-update-*.zip`。
-- 如果版本包含历史图库、当前会话、刷新恢复或服务端素材库改动，再上传 `image-sub2api-studio-service-update-*.zip`。
-- 只有图片文件本身变了，才单独上传图片包或同步对象存储。
+## 不要重复上传图床和历史数据
 
-## 0.8 更新重点
+日常更新只需要覆盖前端构建产物和服务脚本。不要删除或覆盖这些目录：
 
-- 生图默认直连 `/v1/images/generations` 的图片模型，例如 `gpt-image-2`。
-- 参考图编辑和 Mask 局部重绘走 `/v1/images/edits`。
-- 底部创作会话调用 `/v1/chat/completions` 做提示词优化。
-- 当前画布、选中节点、提示词上下文、参数、进度和预览结果会通过 `/studio-api/session` 保存。
-- 登录后的生图先进入 `/studio-api/generation-jobs`，由服务端完成上游调用、结果落盘和历史记录写入。
-- 历史图库和左侧项目按会话归类，不再一张图拆成一个项目。
-- 生图超时、停止或前端断开时会进入“待确认”，提醒上游可能仍在处理或已扣费。
-- 服务器后台看到文生图入站和上游都是 `/v1/images/generations` 时，说明走的是正式图片生成链路。
+```text
+/var/lib/image-sub2api-studio/
+/var/lib/image-sub2api-studio/library/
+```
 
-## 本地打包原则
+它们保存历史图库、当前会话、队列任务、生成图片和受保护素材库。项目虽然逐步更名为 AI Image Workbench，但生产数据目录仍沿用旧路径，目的是避免升级后历史数据丢失。
 
-核心包只包含 `dist/` 的构建产物：
+## 当前链路约定
 
-- `index.html`
-- `studio.html`
-- `favicon.svg`
-- `cases.json`
-- `inspirations.json`
-- `inspiration-sources.json`
-- `style-library.json`
-- `studio-assets/`
+```text
+普通生图          -> POST /v1/images/generations
+参考图 / Mask     -> POST /v1/images/edits
+提示词助手        -> POST /v1/chat/completions
+/v1/responses     -> 只用于显式兼容测试
+```
 
-注意：`studio.html` 必须来自 `dist/studio.html`。不要把仓库根目录的源码版 `studio.html` 直接上传，否则线上会引用 `/src/studio.jsx`，导致白屏。
+在网关后台看到文生图入站和上游都是 `/v1/images/generations`，才说明走的是正式图片模型链路。不要把普通生图默认改回 `/v1/responses`。
 
-核心包必须排除：
-
-- `images/`
-- `node_modules/`
-- `dist/`
-- `.env*`
-- 旧版 zip 包
+## 构建 zip 包
 
 构建 `/studio/` 子路径版本：
 
@@ -56,110 +44,106 @@ Remove-Item Env:\STUDIO_BASE_PATH
 生成核心包和服务包：
 
 ```bash
-node scripts/package-studio-core-update.mjs
+npm run package:release
 ```
 
-脚本会同时生成两个包：
+脚本会生成：
 
-- `image-sub2api-studio-core-update-*.zip`：覆盖静态目录。
-- `image-sub2api-studio-service-update-*.zip`：覆盖 `/opt/image-sub2api-studio`，用于更新历史/会话服务。
+- `ai-image-workbench-core-update-*.zip`：覆盖静态目录。
+- `ai-image-workbench-service-update-*.zip`：覆盖服务运行目录。
+- `image-sub2api-studio-core-update-*.zip` 和 `image-sub2api-studio-service-update-*.zip`：旧名称兼容副本，已有脚本仍可继续使用。
 
 ## 上传到服务器
 
 ```bash
-scp release/image-sub2api-studio-core-update-YYYYMMDD-HHMMSS.zip user@YOUR_SERVER:/home/user/
-scp release/image-sub2api-studio-service-update-YYYYMMDD-HHMMSS.zip user@YOUR_SERVER:/home/user/
+scp release/ai-image-workbench-core-update-YYYYMMDD-HHMMSS.zip user@YOUR_SERVER:/home/user/
+scp release/ai-image-workbench-service-update-YYYYMMDD-HHMMSS.zip user@YOUR_SERVER:/home/user/
 ```
 
-## 在服务器覆盖更新
+## 覆盖静态目录
 
-注意：不要删除服务器现有图片目录。
+线上 Oh Laoo Studio 当前 Nginx 静态目录是：
 
-如果你的 Nginx 静态目录是示例目录：
-
-```bash
-sudo mkdir -p /var/www/image-sub2api-studio
-sudo unzip -o /home/user/image-sub2api-studio-core-update-YYYYMMDD-HHMMSS.zip -d /var/www/image-sub2api-studio
-
-sudo find /var/www/image-sub2api-studio -type d -exec chmod 755 {} \;
-sudo find /var/www/image-sub2api-studio -type f -exec chmod 644 {} \;
+```text
+/var/www/ohlaoo-studio
 ```
 
-如果你的线上站点实际读取 `/var/www/ohlaoo-studio`，就改成：
+所以应解压到：
 
 ```bash
 sudo mkdir -p /var/www/ohlaoo-studio
-sudo unzip -o /home/user/image-sub2api-studio-core-update-YYYYMMDD-HHMMSS.zip -d /var/www/ohlaoo-studio
+sudo unzip -o /home/user/ai-image-workbench-core-update-YYYYMMDD-HHMMSS.zip -d /var/www/ohlaoo-studio
 
 sudo find /var/www/ohlaoo-studio -type d -exec chmod 755 {} \;
 sudo find /var/www/ohlaoo-studio -type f -exec chmod 644 {} \;
 ```
 
-如果这次包含 `service-update` 包：
+不要解压到 `/var/www/image-sub2api-studio`，除非 Nginx `alias` 也改成读取这个目录。
+
+## 覆盖服务目录
+
+如果这次包含服务端持久化、队列、图库接口或素材库接口改动，再更新服务包：
 
 ```bash
 sudo mkdir -p /opt/image-sub2api-studio
-sudo unzip -o /home/user/image-sub2api-studio-service-update-YYYYMMDD-HHMMSS.zip -d /opt/image-sub2api-studio
+sudo unzip -o /home/user/ai-image-workbench-service-update-YYYYMMDD-HHMMSS.zip -d /opt/image-sub2api-studio
 
 cd /opt/image-sub2api-studio
 sudo npm ci --omit=dev
 sudo systemctl restart image-sub2api-studio-history
-curl http://127.0.0.1:8787/studio-api/health
+curl -s http://127.0.0.1:8787/studio-api/health
+```
+
+如果 systemd 服务不存在：
+
+```bash
+sudo cp /opt/image-sub2api-studio/deploy/image-sub2api-studio-history.service \
+  /etc/systemd/system/image-sub2api-studio-history.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now image-sub2api-studio-history
 ```
 
 ## 验证
 
-先确认新 JS/CSS 是否真实返回，不要只看入口页：
+先看线上入口实际引用的 JS/CSS hash：
 
 ```bash
-curl -I https://studio.example.com/studio/
-curl -I https://studio.example.com/studio/studio-assets/studio-g-PhJdYt.js
-curl -I https://studio.example.com/studio/studio-assets/studio-CNmg3NkT.css
-curl -I https://studio.example.com/studio-api/health
+curl -s https://studio.ohlaoo.com/studio/ | grep 'studio-assets'
 ```
 
-实际 JS/CSS 文件名带 hash，以 `dist/studio.html` 里的 `<script>` 和 `<link>` 为准。
-
-## 如果页面显示 `0 类`
-
-先检查静态数据文件：
+再检查这些资源不是 HTML fallback：
 
 ```bash
-curl -I https://studio.example.com/studio/cases.json
-curl -I https://studio.example.com/studio/inspirations.json
+curl -I https://studio.ohlaoo.com/studio/
+curl -I https://studio.ohlaoo.com/studio/studio-assets/<actual-js-file>.js
+curl -I https://studio.ohlaoo.com/studio/studio-assets/<actual-css-file>.css
+curl -I https://studio.ohlaoo.com/studio-api/health
 ```
 
-如果启用了 `/studio-api/library`，再检查：
+正确结果应该是：
+
+- Studio 入口返回 `text/html`。
+- JS 返回 `application/javascript`。
+- CSS 返回 `text/css`。
+- `/studio-api/health` 返回 JSON。
+
+如果 JS/CSS 返回 `text/html` 或 404，说明静态目录、base path 或 Nginx alias 错了，页面会白屏。
+
+## 素材库检查
+
+如果灵感广场为空，先检查受保护素材库：
 
 ```bash
-curl -I https://studio.example.com/studio-api/health
+for f in /var/lib/image-sub2api-studio/library/cases.json \
+  /var/lib/image-sub2api-studio/library/inspirations.json \
+  /var/lib/image-sub2api-studio/library/style-library.json; do
+  [ -f "$f" ] || continue
+  echo "== $f =="
+  sudo node -e "const fs=require('fs'); const j=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); for (const [k,v] of Object.entries(j)) if (Array.isArray(v)) console.log(k, v.length);" "$f"
+done
+
+sudo find /var/lib/image-sub2api-studio/library/images \
+  -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) | wc -l
 ```
 
-如果要隐藏素材和提示词，不让它们通过浏览器直接看到，需要让历史/素材服务读取当前素材目录：
-
-```ini
-Environment=STUDIO_LIBRARY_DIR=/var/lib/image-sub2api-studio/library
-Environment=STUDIO_LIBRARY_ASSET_DIR=/var/lib/image-sub2api-studio/library/images
-```
-
-确认 `/studio-api/library` 有数据后，再用 Nginx 屏蔽 `/studio/cases.json`、`/studio/inspirations.json` 和 `/studio/images/`。
-
-## 什么时候才需要传图片
-
-只有以下情况才需要传图片包：
-
-- 新增、删除或替换了图片文件。
-- 新增、删除或替换了缩略图。
-- `cases.json` 引用了服务器上不存在的新图片。
-
-服务器现有图库可用下面命令粗查：
-
-```bash
-find /var/www/image-sub2api-studio/images -maxdepth 1 -type f -name 'case*.jpg' | wc -l
-find /var/www/image-sub2api-studio/images/thumbs -type f -name '*.webp' | wc -l
-find /var/www/image-sub2api-studio/images/thumbs/category-covers -type f -name '*.webp' | wc -l
-```
-
-如果你的实际静态目录是 `/var/www/ohlaoo-studio`，把上面的路径替换掉即可。
-
-如果数量和上次一致，并且页面能正常访问，就不需要重新上传图片库。
+前端已经加载过的图片、JSON 和提示词无法靠前端代码彻底隐藏。生产环境要保护素材和提示词，应让服务端读取 `/var/lib/image-sub2api-studio/library`，前端通过 `/studio-api/library` 登录后访问，并用 Nginx 屏蔽公开的 `/studio/cases.json`、`/studio/inspirations.json` 和 `/studio/images/`。

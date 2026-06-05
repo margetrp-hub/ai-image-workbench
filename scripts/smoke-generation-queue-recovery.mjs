@@ -1,0 +1,464 @@
+import { chromium } from 'playwright';
+import { createServer } from 'vite';
+
+const screenshotDir = 'D:/wiki/image-sub2api-studio/output/playwright';
+const screenshotPath = `${screenshotDir}/generation-queue-recovery.png`;
+const failedScreenshotPath = `${screenshotDir}/generation-queue-failed-message.png`;
+const runningScreenshotPath = `${screenshotDir}/generation-queue-running-cancel.png`;
+
+function assert(condition, message, evidence) {
+  if (!condition) {
+    throw new Error(`${message}${evidence ? `\n${JSON.stringify(evidence, null, 2)}` : ''}`);
+  }
+}
+
+function restoredSession() {
+  return {
+    sessionId: 'queue-recovery-session',
+    mode: 'image',
+    status: 'loading',
+    message: 'Restored generation is still running.',
+    prompt: 'A quiet ceramic object on a soft paper background',
+    model: 'gpt-image-2',
+    progress: { stage: 'upstream', percent: 52, completed: 0, total: 1 },
+    generationQueue: [{
+      id: 'task-restored-1',
+      serverJobId: 'job-restored-1',
+      remote: true,
+      status: 'running',
+      stage: 'upstream',
+      prompt: 'A quiet ceramic object on a soft paper background',
+      summary: 'A quiet ceramic object on a soft paper background',
+      model: 'gpt-image-2',
+      size: '1024x1024',
+      quality: 'high',
+      count: 1
+    }],
+    assistantMessages: [],
+    canvasNodes: []
+  };
+}
+
+function failedSession() {
+  return {
+    sessionId: 'queue-failed-session',
+    mode: 'image',
+    status: 'loading',
+    message: 'Restored generation failed.',
+    prompt: 'A quiet ceramic object on a soft paper background',
+    model: 'gpt-image-2',
+    progress: { stage: 'upstream', percent: 52, completed: 0, total: 1 },
+    generationQueue: [{
+      id: 'task-failed-1',
+      serverJobId: 'job-failed-1',
+      remote: true,
+      status: 'running',
+      stage: 'upstream',
+      prompt: 'A quiet ceramic object on a soft paper background',
+      summary: 'A quiet ceramic object on a soft paper background',
+      model: 'gpt-image-2',
+      size: '1024x1024',
+      quality: 'high',
+      count: 1
+    }],
+    assistantMessages: [],
+    canvasNodes: []
+  };
+}
+
+function runningSession() {
+  return {
+    sessionId: 'queue-running-session',
+    mode: 'image',
+    status: 'loading',
+    message: 'Restored generation is still running.',
+    prompt: 'A quiet ceramic object waiting in the service queue',
+    model: 'gpt-image-2',
+    progress: { stage: 'upstream', percent: 52, completed: 0, total: 1 },
+    generationQueue: [{
+      id: 'task-running-1',
+      serverJobId: 'job-running-1',
+      remote: true,
+      status: 'running',
+      stage: 'upstream',
+      prompt: 'A quiet ceramic object waiting in the service queue',
+      summary: 'A quiet ceramic object waiting in the service queue',
+      model: 'gpt-image-2',
+      size: '1024x1024',
+      quality: 'high',
+      count: 1
+    }],
+    assistantMessages: [],
+    canvasNodes: []
+  };
+}
+
+async function installCommonRoutes(page) {
+  await page.route('**/auth/me', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ id: 1, email: 'queue-smoke@example.com', username: 'queue-smoke' })
+  }));
+  await page.route('**/api-keys**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ id: 1, key: 'sk-smoke-visible-prefix' }])
+  }));
+  await page.route('**/v1/models**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ data: [{ id: 'gpt-image-2' }, { id: 'gpt-5.5' }] })
+  }));
+  await page.route('**/dashboard/billing/usage**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ total: 0, requests: 0 })
+  }));
+  await page.route('**/studio-api/library**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ ok: true, categories: [], styles: [], scenes: [], cases: [] })
+  }));
+  await page.route('**/studio-api/history**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ ok: true, records: [], total: 0, nextOffset: null })
+  }));
+}
+
+const server = await createServer({
+  logLevel: 'silent',
+  server: {
+    host: '127.0.0.1',
+    port: 0,
+    strictPort: false
+  }
+});
+
+let browser;
+
+try {
+  await server.listen();
+  const baseUrl = server.resolvedUrls?.local?.[0];
+  assert(baseUrl, 'Vite smoke server did not expose a local URL.');
+
+  browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 980 } });
+  let jobPollCount = 0;
+  let sessionSaveCount = 0;
+
+  await installCommonRoutes(page);
+  await page.route('**/studio-api/session', async (route) => {
+    if (route.request().method() === 'POST') {
+      sessionSaveCount += 1;
+      const body = route.request().postDataJSON();
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, session: body })
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, session: restoredSession() })
+    });
+  });
+  await page.route('**/studio-api/generation-jobs/job-restored-1', (route) => {
+    jobPollCount += 1;
+    const status = jobPollCount < 2 ? 'upstream' : 'unknown';
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        job: {
+          id: 'job-restored-1',
+          sessionId: 'queue-recovery-session',
+          status,
+          stage: status,
+          completed: 0,
+          total: 1,
+          resultUrls: [],
+          error: status === 'unknown'
+            ? {
+              code: 'JOB_RUNTIME_NOT_ATTACHED',
+              message: 'The service restarted while this job was active.'
+            }
+            : null
+        }
+      })
+    });
+  });
+
+  await page.addInitScript(() => {
+    localStorage.setItem('auth_token', 'queue-smoke-token');
+    localStorage.setItem('auth_user', JSON.stringify({ id: 1, email: 'queue-smoke@example.com' }));
+    localStorage.setItem('image-sub2api-studio:current-session:v1', JSON.stringify({
+      sessionId: 'queue-recovery-session',
+      status: 'loading',
+      prompt: 'Local cache copy',
+      generationQueue: [{
+        id: 'task-restored-1',
+        serverJobId: 'job-restored-1',
+        remote: true,
+        status: 'running',
+        prompt: 'Local cache copy',
+        summary: 'Local cache copy'
+      }]
+    }));
+  });
+
+  await page.goto(new URL('studio.html', baseUrl).toString(), { waitUntil: 'networkidle' });
+  await page.waitForSelector('.canvasQueueDock', { timeout: 8000 });
+  await page.waitForTimeout(2200);
+  await page.waitForFunction(() => {
+    const stored = JSON.parse(localStorage.getItem('image-sub2api-studio:current-session:v1') || '{}');
+    return stored.generationQueue?.[0]?.status === 'unknown';
+  }, null, { timeout: 8000 }).catch(() => {});
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+
+  const result = await page.evaluate(() => {
+    const queueItems = [...document.querySelectorAll('.canvasQueueItem')].map((node) => ({
+      className: node.className,
+      text: node.innerText
+    }));
+    const buttons = [...document.querySelectorAll('.canvasQueueItem button')].map((node) => ({
+      title: node.getAttribute('title') || '',
+      label: node.getAttribute('aria-label') || ''
+    }));
+    const stored = JSON.parse(localStorage.getItem('image-sub2api-studio:current-session:v1') || '{}');
+    return {
+      queueItems,
+      buttons,
+      storedStatus: stored.generationQueue?.[0]?.status || '',
+      body: document.body.innerText.slice(0, 1200)
+    };
+  });
+
+  assert(jobPollCount >= 2, 'Restored remote generation job was not polled after page load.', { jobPollCount, result });
+  assert(result.queueItems.length === 1, `Expected one restored queue item, got ${result.queueItems.length}.`, result);
+  assert(result.queueItems[0].className.includes('unknown'), 'Restored remote job did not stay visible as an unknown queue item.', result);
+  assert(result.storedStatus === 'unknown', 'Unknown queue status was not saved back into the current session cache.', result);
+  assert(result.buttons.length >= 1, 'Unknown queue item did not expose an acknowledge/remove control.', result);
+  assert(sessionSaveCount >= 1, 'Recovered queue snapshot was not saved back to the history service.', { sessionSaveCount });
+
+  const failedPage = await browser.newPage({ viewport: { width: 1440, height: 980 } });
+  let failedSessionSaveCount = 0;
+  await installCommonRoutes(failedPage);
+  await failedPage.route('**/studio-api/session', async (route) => {
+    if (route.request().method() === 'POST') {
+      failedSessionSaveCount += 1;
+      const body = route.request().postDataJSON();
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, session: body })
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, session: failedSession() })
+    });
+  });
+  await failedPage.route('**/studio-api/generation-jobs/job-failed-1', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      ok: true,
+      job: {
+        id: 'job-failed-1',
+        sessionId: 'queue-failed-session',
+        status: 'failed',
+        stage: 'failed',
+        completed: 0,
+        total: 1,
+        resultUrls: [],
+        requestIds: ['req-failed-1'],
+        error: {
+          code: 'HTTP_403',
+          status: 403,
+          requestId: 'req-failed-1',
+          message: 'ORIGIN_NOT_ALLOWED'
+        }
+      }
+    })
+  }));
+  await failedPage.addInitScript(() => {
+    localStorage.setItem('auth_token', 'queue-smoke-token');
+    localStorage.setItem('auth_user', JSON.stringify({ id: 1, email: 'queue-smoke@example.com' }));
+    localStorage.setItem('image-sub2api-studio:current-session:v1', JSON.stringify({
+      sessionId: 'queue-failed-session',
+      status: 'loading',
+      prompt: 'Local failed cache copy',
+      generationQueue: [{
+        id: 'task-failed-1',
+        serverJobId: 'job-failed-1',
+        remote: true,
+        status: 'running',
+        prompt: 'Local failed cache copy',
+        summary: 'Local failed cache copy'
+      }]
+    }));
+  });
+  await failedPage.goto(new URL('studio.html', baseUrl).toString(), { waitUntil: 'networkidle' });
+  await failedPage.waitForSelector('.canvasQueueDock', { timeout: 8000 });
+  await failedPage.waitForTimeout(1800);
+  await failedPage.screenshot({ path: failedScreenshotPath, fullPage: true });
+  const failedResult = await failedPage.evaluate(() => ({
+    body: document.body.innerText.slice(0, 1800),
+    queueItems: [...document.querySelectorAll('.canvasQueueItem')].map((node) => ({
+      className: node.className,
+      text: node.innerText
+    })),
+    storedStatus: JSON.parse(localStorage.getItem('image-sub2api-studio:current-session:v1') || '{}')?.generationQueue?.[0]?.status || ''
+  }));
+  assert(failedResult.body.includes('STUDIO_ALLOWED_ORIGINS'), 'Failed restored job did not show the allowed-origin explanation.', failedResult);
+  assert(!failedResult.body.includes('上游返回了未识别的英文错误'), 'Failed restored job fell back to the generic English-error message.', failedResult);
+  assert(failedResult.queueItems[0]?.className.includes('failed'), 'Failed restored job did not stay visible as a failed queue item.', failedResult);
+  assert(failedResult.queueItems[0]?.text.includes('STUDIO_ALLOWED_ORIGINS'), 'Failed queue card did not show the allowed-origin explanation.', failedResult);
+  assert(!failedResult.queueItems[0]?.text.includes('ORIGIN_NOT_ALLOWED'), 'Failed queue card exposed the raw upstream error instead of a readable explanation.', failedResult);
+  assert(failedResult.storedStatus === 'failed', 'Failed queue status was not saved back into the current session cache.', failedResult);
+  assert(failedSessionSaveCount >= 1, 'Failed queue snapshot was not saved back to the history service.', { failedSessionSaveCount });
+  await failedPage.close();
+
+  const runningPage = await browser.newPage({ viewport: { width: 1440, height: 980 } });
+  let runningCancelCount = 0;
+  let runningPollCount = 0;
+  await installCommonRoutes(runningPage);
+  await runningPage.route('**/studio-api/session', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, session: body })
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, session: runningSession() })
+    });
+  });
+  await runningPage.route('**/studio-api/generation-jobs/job-running-1', (route) => {
+    if (route.request().method() === 'DELETE') {
+      runningCancelCount += 1;
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          job: {
+            id: 'job-running-1',
+            sessionId: 'queue-running-session',
+            status: 'canceled',
+            stage: 'canceled',
+            completed: 0,
+            total: 1,
+            resultUrls: [],
+            error: {
+              code: 'JOB_CANCELED',
+              message: 'The job was canceled locally.'
+            }
+          }
+        })
+      });
+    }
+    runningPollCount += 1;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        job: {
+          id: 'job-running-1',
+          sessionId: 'queue-running-session',
+          status: 'upstream',
+          stage: 'upstream',
+          completed: 0,
+          total: 1,
+          resultUrls: []
+        }
+      })
+    });
+  });
+  await runningPage.addInitScript(() => {
+    localStorage.setItem('auth_token', 'queue-smoke-token');
+    localStorage.setItem('auth_user', JSON.stringify({ id: 1, email: 'queue-smoke@example.com' }));
+    localStorage.setItem('image-sub2api-studio:current-session:v1', JSON.stringify({
+      sessionId: 'queue-running-session',
+      status: 'loading',
+      prompt: 'Local running cache copy',
+      generationQueue: [{
+        id: 'task-running-1',
+        serverJobId: 'job-running-1',
+        remote: true,
+        status: 'running',
+        prompt: 'Local running cache copy',
+        summary: 'Local running cache copy'
+      }]
+    }));
+  });
+  await runningPage.goto(new URL('studio.html', baseUrl).toString(), { waitUntil: 'networkidle' });
+  await runningPage.waitForSelector('.canvasQueueDock', { timeout: 8000 });
+  await runningPage.waitForFunction(() => (
+    [...document.querySelectorAll('.canvasQueueItem')].some((node) => node.className.includes('running') && node.innerText.includes('生成中'))
+  ), null, { timeout: 8000 });
+  const runningBeforeCancel = await runningPage.evaluate(() => ({
+    queueItems: [...document.querySelectorAll('.canvasQueueItem')].map((node) => ({
+      className: node.className,
+      text: node.innerText
+    })),
+    buttons: [...document.querySelectorAll('.canvasQueueItem button')].map((node) => ({
+      title: node.getAttribute('title') || '',
+      label: node.getAttribute('aria-label') || ''
+    })),
+    body: document.body.innerText.slice(0, 1400)
+  }));
+  assert(runningPollCount >= 1, 'Running restored job was not polled after page load.', { runningPollCount, runningBeforeCancel });
+  assert(runningBeforeCancel.queueItems[0]?.className.includes('running'), 'Running restored job did not remain visible as a running queue item.', runningBeforeCancel);
+  assert(runningBeforeCancel.buttons.some((button) => button.title.includes('停止') || button.label.includes('停止')), 'Running restored job did not expose a stop control.', runningBeforeCancel);
+
+  await runningPage.locator('.canvasQueueItem button').first().click();
+  await runningPage.waitForFunction(() => {
+    const stored = JSON.parse(localStorage.getItem('image-sub2api-studio:current-session:v1') || '{}');
+    return stored.generationQueue?.[0]?.status === 'canceled';
+  }, null, { timeout: 8000 });
+  await runningPage.screenshot({ path: runningScreenshotPath, fullPage: true });
+  const runningResult = await runningPage.evaluate(() => {
+    const stored = JSON.parse(localStorage.getItem('image-sub2api-studio:current-session:v1') || '{}');
+    return {
+      storedStatus: stored.generationQueue?.[0]?.status || '',
+      queueItems: [...document.querySelectorAll('.canvasQueueItem')].map((node) => ({
+        className: node.className,
+        text: node.innerText
+      })),
+      body: document.body.innerText.slice(0, 1400)
+    };
+  });
+  assert(runningCancelCount === 1, 'Stop control did not call the server-side cancel endpoint exactly once.', { runningCancelCount, runningResult });
+  assert(runningResult.storedStatus === 'canceled', 'Canceled running queue status was not saved back into the current session cache.', runningResult);
+  assert(runningResult.queueItems[0]?.className.includes('canceled'), 'Canceled running job did not remain visible as a canceled queue item.', runningResult);
+  assert(!runningResult.queueItems[0]?.text.includes('服务端任务 job-running-1'), 'Canceled running job fell back to an opaque server job label.', runningResult);
+  assert(!runningResult.body.includes('正在生成'), 'Canceled running job left the main composer in a generating state.', runningResult);
+  await runningPage.close();
+
+  console.log(JSON.stringify({
+    ok: true,
+    screenshotPath,
+    failedScreenshotPath,
+    runningScreenshotPath,
+    jobPollCount,
+    sessionSaveCount,
+    runningPollCount,
+    runningCancelCount,
+    result,
+    failedResult,
+    runningResult
+  }, null, 2));
+} finally {
+  if (browser) await browser.close();
+  await server.close();
+}

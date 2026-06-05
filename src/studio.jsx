@@ -19,6 +19,7 @@ import {
   LoaderCircle,
   LogOut,
   Languages,
+  Maximize2,
   MessageSquareText,
   Moon,
   PanelLeftClose,
@@ -43,7 +44,7 @@ import {
 } from 'lucide-react';
 import './studio.css';
 import {
-  Sub2ApiClient,
+  AiGatewayClient,
   StudioHistoryClient,
   clearSession,
   getImageUrls,
@@ -54,9 +55,17 @@ import {
   loadSession,
   saveProviderSettings,
   saveSelectedKeyId
-} from './sub2apiClient';
+} from './aiGatewayClient';
 import { buildPromptSlug, sanitizeProvider } from './studio/util/filename.js';
 import { createTranslator, loadStudioLanguage, nextLanguage, saveStudioLanguage, SUPPORTED_LANGUAGES } from './studio/i18n.js';
+import { IMAGE_PROVIDER_REGISTRY, getImageProvider } from './studio/providers/index.js';
+import { resolveProviderAdapter } from './studio/providers/adapters.js';
+import {
+  clearHistoryItems,
+  deleteHistoryItem,
+  loadHistoryItems,
+  saveHistoryItems
+} from './studio/storage/index.js';
 
 const IMAGE_MODELS = ['gpt-image-2', 'gpt-image-1', 'gpt-image-1-mini'];
 const RESPONSE_MODELS = ['gpt-5.5', 'gpt-5.2', 'gpt-5.1', 'gpt-4.1'];
@@ -98,9 +107,15 @@ const CANVAS_NODE_MAX_HEIGHT = 520;
 const CANVAS_NODE_HORIZONTAL_GAP = 170;
 const CANVAS_NODE_VERTICAL_GAP = 88;
 const CANVAS_DRAG_CLICK_TOLERANCE = 4;
+const CANVAS_VIRTUALIZATION_MARGIN = 420;
+const CANVAS_PERFORMANCE_NODE_THRESHOLD = 18;
+const CANVAS_PERFORMANCE_EDGE_THRESHOLD = 24;
+const CANVAS_PROTECTED_ASSET_RESOLVE_LIMIT = 24;
 const GENERATION_STALL_NOTICE_MS = 90 * 1000;
 const GENERATION_TIMEOUT_MS = 45 * 60 * 1000;
 const GENERATION_QUEUE_LIMIT = 12;
+const VISIBLE_GENERATION_QUEUE_STATUSES = ['queued', 'running', 'failed', 'canceled', 'unknown', 'done'];
+const CURRENT_PROJECT_QUEUE_STATUSES = new Set(VISIBLE_GENERATION_QUEUE_STATUSES);
 const VIDEO_ASPECT_OPTIONS = [
   { value: '16:9', label: '16:9', width: 1280, height: 720 },
   { value: '9:16', label: '9:16', width: 720, height: 1280 },
@@ -191,11 +206,6 @@ const RESOLUTION_TIER_LABELS = {
   '2k': '2K',
   '4k': '4K'
 };
-const RESOLUTION_TIER_HINTS = {
-  '1k': '分辨率要求：1K，约 1024px 级别。',
-  '2k': '分辨率要求：2K，约 2048px 级别，细节更丰富，适合放大查看。',
-  '4k': '分辨率要求：4K，约 4096px 级别，超高清细节，适合高分辨率展示。'
-};
 const OUTPUT_FORMAT_LABELS = {
   png: 'PNG',
   jpeg: 'JPEG',
@@ -205,6 +215,39 @@ const MODERATION_LABELS = {
   auto: '自动',
   low: '低'
 };
+function providerParameterList(provider, key, fallback) {
+  const values = provider?.parameters?.[key];
+  return Array.isArray(values) && values.length ? values : fallback;
+}
+
+function providerCountRange(provider) {
+  const [minValue, maxValue] = Array.isArray(provider?.parameters?.countRange)
+    ? provider.parameters.countRange
+    : [1, 10];
+  const min = Math.max(1, Math.round(Number(minValue) || 1));
+  const max = Math.max(min, Math.round(Number(maxValue) || 10));
+  return { min, max };
+}
+
+function providerAspectOptions(provider) {
+  const supportedSizes = new Set(providerParameterList(provider, 'sizes', SIZES));
+  const options = ASPECT_OPTIONS.filter((item) => item.value === 'custom' || supportedSizes.has(item.size));
+  return options.length ? options : ASPECT_OPTIONS;
+}
+
+function providerCustomSizeOptions(provider) {
+  const sizes = providerParameterList(provider, 'sizes', SIZES);
+  return sizes.map((value) => (
+    CUSTOM_SIZE_OPTIONS.find((item) => item.value === value) || { value, label: value === 'auto' ? 'Auto' : value.replace('x', ' x ') }
+  ));
+}
+
+function clampCountForProvider(value, provider) {
+  const range = providerCountRange(provider);
+  const next = normalizeCount(value);
+  return Math.min(range.max, Math.max(range.min, next));
+}
+
 const FALLBACK_PROMPT_PRESETS = [];
 const FALLBACK_VIDEO_INSPIRATIONS = [];
 const BASE_PATH = import.meta.env.BASE_URL || '/';
@@ -351,9 +394,17 @@ function formatDownloadStamp(value) {
   ].join('');
 }
 
+function formatFileSize(value) {
+  const size = Number(value || 0);
+  if (!Number.isFinite(size) || size <= 0) return '';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 102.4) / 10} KB`;
+  return `${Math.round(size / (1024 * 102.4)) / 10} MB`;
+}
+
 function buildStudioDownloadFilename({
   mode = 'image',
-  providerId = 'sub2api',
+  providerId = 'gateway-account',
   createdAt,
   prompt,
   id,
@@ -367,13 +418,13 @@ function buildStudioDownloadFilename({
   const suffix = shortId(id || `${stamp}-${slug}-${index}`);
   const seq = String(Math.max(1, (Number.isFinite(index) ? (index | 0) : 0) + 1)).padStart(2, '0');
   const ext = String(extension || (type === 'video' ? 'mp4' : 'png')).toLowerCase().replace(/[^a-z0-9]+/g, '') || (type === 'video' ? 'mp4' : 'png');
-  return `image-sub2api-studio-${type}-${provider}-${stamp}-${slug}-${suffix}-${seq}.${ext}`;
+  return `ai-image-workbench-${type}-${provider}-${stamp}-${slug}-${suffix}-${seq}.${ext}`;
 }
 
 function downloadMetaFromHistoryItem(item, isVideo = false) {
   return {
     mode: isVideo ? 'video' : 'image',
-    providerId: item?.providerId || item?.provider || item?.route || item?.model || 'sub2api',
+    providerId: item?.providerId || item?.provider || item?.route || item?.model || 'gateway-account',
     createdAt: item?.createdAt,
     prompt: item?.generationPrompt || item?.prompt || item?.case?.title || '',
     id: item?.taskId || item?.id || item?.createdAt
@@ -481,6 +532,23 @@ function normalizeCachedCurrentSession(session) {
   if (!session || typeof session !== 'object') return null;
   const persistedResults = Array.isArray(session.persistedResults) ? session.persistedResults : [];
   const persistedVideoResults = Array.isArray(session.persistedVideoResults) ? session.persistedVideoResults : [];
+  const restoredQueueStatus = (item) => {
+    if (item?.remote || item?.serverJobId) return item?.status;
+    if (item?.status === 'running') return 'failed';
+    if (item?.status === 'queued') return 'failed';
+    return item?.status;
+  };
+  const generationQueue = Array.isArray(session.generationQueue)
+    ? session.generationQueue
+      .filter((item) => item && typeof item === 'object')
+      .slice(-GENERATION_QUEUE_LIMIT)
+      .map((item) => ({
+        ...item,
+        status: restoredQueueStatus(item),
+        restored: true,
+        summary: String(item.summary || item.prompt || '').slice(0, 240)
+      }))
+    : [];
   return {
     ...session,
     results: Array.isArray(session.results)
@@ -494,7 +562,8 @@ function normalizeCachedCurrentSession(session) {
         ...node,
         url: sessionUrlForServer(node?.url, node?.persistedUrl)
       }))
-      : []
+      : [],
+    generationQueue
   };
 }
 
@@ -503,7 +572,12 @@ function prepareCurrentSessionForServer(session) {
   const normalized = normalizeCachedCurrentSession(session);
   const persistedResults = Array.isArray(normalized.persistedResults) ? normalized.persistedResults : [];
   const persistedVideoResults = Array.isArray(normalized.persistedVideoResults) ? normalized.persistedVideoResults : [];
-  const { persistedResults: _persistedResults, persistedVideoResults: _persistedVideoResults, ...rest } = normalized;
+  const {
+    persistedResults: _persistedResults,
+    persistedVideoResults: _persistedVideoResults,
+    updatedAt: _updatedAt,
+    ...rest
+  } = normalized;
   return {
     ...rest,
     results: Array.isArray(normalized.results)
@@ -517,7 +591,113 @@ function prepareCurrentSessionForServer(session) {
         ...node,
         url: sessionUrlForServer(node.url, persistedUrl)
       }))
+      : [],
+    generationQueue: Array.isArray(normalized.generationQueue)
+      ? normalized.generationQueue.map(serializeGenerationQueueItem).filter(Boolean)
       : []
+  };
+}
+
+function sessionSnapshotComparePayload(session) {
+  const payload = prepareCurrentSessionForServer(session);
+  return payload ? JSON.stringify(payload) : '';
+}
+
+function hasRestorableServerGeneration(session) {
+  return Array.isArray(session?.generationQueue)
+    && session.generationQueue.some((item) => (
+      item?.serverJobId
+      && (item.remote || item.status === 'running' || item.status === 'queued')
+      && !['failed', 'canceled', 'unknown', 'done'].includes(item.status)
+    ));
+}
+
+function serializeAssistantMessage(item) {
+  if (!item || typeof item !== 'object') return null;
+  const role = item.role === 'assistant' ? 'assistant' : 'user';
+  return {
+    id: String(item.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+    role,
+    content: String(item.content || '').slice(0, 8000),
+    finalPrompt: String(item.finalPrompt || '').slice(0, 12000),
+    pending: Boolean(item.pending),
+    failed: Boolean(item.failed)
+  };
+}
+
+function serializePromptSuggestion(value) {
+  if (!value || typeof value !== 'object') return null;
+  return {
+    subject: String(value.subject || '').slice(0, 2000),
+    scene: String(value.scene || '').slice(0, 2000),
+    composition: String(value.composition || '').slice(0, 2000),
+    style: String(value.style || '').slice(0, 2000),
+    lighting: String(value.lighting || '').slice(0, 2000),
+    details: String(value.details || '').slice(0, 3000),
+    textRules: String(value.textRules || '').slice(0, 2000),
+    constraints: String(value.constraints || '').slice(0, 3000),
+    finalPrompt: String(value.finalPrompt || '').slice(0, 12000),
+    raw: String(value.raw || '').slice(0, 16000)
+  };
+}
+
+function serializeGenerationQueueItem(item) {
+  if (!item || typeof item !== 'object') return null;
+  const safeStatus = ['queued', 'running', 'failed', 'canceled', 'unknown', 'done'].includes(item.status) ? item.status : item.status || 'queued';
+  return {
+    id: String(item.id || ''),
+    status: safeStatus,
+    createdAt: Number(item.createdAt || Date.now()),
+    startedAt: item.startedAt ? Number(item.startedAt) : null,
+    completedAt: item.completedAt ? Number(item.completedAt) : null,
+    mode: item.mode || 'image',
+    providerId: String(item.providerId || item.provider || ''),
+    providerFamily: String(item.providerFamily || item.providerId || item.provider || ''),
+    apiKeySource: String(item.apiKeySource || ''),
+    providerLabel: String(item.providerLabel || ''),
+    prompt: String(item.prompt || '').slice(0, 12000),
+    model: String(item.model || IMAGE_MODELS[0]),
+    aspect: item.aspect || item.aspectRatio || '1:1',
+    aspectRatio: item.aspectRatio || item.aspect || '1:1',
+    customSize: normalizeSize(item.customSize || item.size),
+    size: normalizeSize(item.size),
+    quality: normalizeQuality(item.quality),
+    resolutionTier: normalizeResolutionTier(item.resolutionTier),
+    outputFormat: normalizeOutputFormat(item.outputFormat),
+    moderation: normalizeModeration(item.moderation),
+    count: normalizeCount(item.count),
+    videoModel: item.videoModel || VIDEO_MODELS[0],
+    videoAspect: normalizeVideoAspect(item.videoAspect || item.videoAspectRatio),
+    videoAspectRatio: normalizeVideoAspect(item.videoAspectRatio || item.videoAspect),
+    videoDuration: normalizeVideoDuration(item.videoDuration || item.duration),
+    duration: normalizeVideoDuration(item.duration || item.videoDuration),
+    videoFps: normalizeVideoFps(item.videoFps || item.fps),
+    fps: normalizeVideoFps(item.fps || item.videoFps),
+    videoMotion: normalizeVideoMotion(item.videoMotion),
+    videoStyle: normalizeVideoStyle(item.videoStyle),
+    videoQuality: normalizeVideoQuality(item.videoQuality),
+    negativePrompt: String(item.negativePrompt || '').slice(0, 4000),
+    selectedCanvasNodeId: String(item.selectedCanvasNodeId || ''),
+    selectedCanvasNodeSnapshot: item.selectedCanvasNodeSnapshot || null,
+    referencesOpen: Boolean(item.referencesOpen),
+    summary: String(item.summary || item.prompt || '').slice(0, 240),
+    restorable: item.restorable !== false && !['edit', 'mask', 'video'].includes(item.mode),
+    serverJobId: item.serverJobId || '',
+    remote: Boolean(item.remote),
+    restored: Boolean(item.restored),
+    stage: String(item.stage || '').slice(0, 40),
+    completed: Number(item.completed || 0),
+    total: Number(item.total || item.count || 1),
+    resultUrls: Array.isArray(item.resultUrls) ? item.resultUrls.slice(0, 4).map(String) : [],
+    requestIds: Array.isArray(item.requestIds) ? item.requestIds.slice(0, 8).map(String) : [],
+    error: item.error && typeof item.error === 'object'
+      ? {
+        code: String(item.error.code || '').slice(0, 120),
+        status: item.error.status || null,
+        requestId: String(item.error.requestId || '').slice(0, 160),
+        message: String(item.error.message || '').slice(0, 1200)
+      }
+      : null
   };
 }
 
@@ -551,7 +731,8 @@ function loadWorkbenchLayout() {
       parameters: stored?.parameters !== false,
       parametersRail: stored?.parametersRail === true,
       bottomComposer: stored?.bottomComposer !== false,
-      composerParameters: stored?.composerParameters !== false
+      composerParameters: stored?.composerParameters === true,
+      composerFolded: stored?.composerFolded === true
     };
   } catch {
     return {
@@ -560,7 +741,8 @@ function loadWorkbenchLayout() {
       parameters: true,
       parametersRail: false,
       bottomComposer: true,
-      composerParameters: true
+      composerParameters: false,
+      composerFolded: false
     };
   }
 }
@@ -596,8 +778,9 @@ function normalizeResolutionTier(value) {
   return RESOLUTION_TIERS.some((item) => item.value === value) ? value : '1k';
 }
 
-function withResolutionHint(prompt, resolutionTier) {
-  const hint = RESOLUTION_TIER_HINTS[normalizeResolutionTier(resolutionTier)];
+function withResolutionHint(prompt, resolutionTier, t = (key, fallback) => fallback || key) {
+  const normalizedTier = normalizeResolutionTier(resolutionTier);
+  const hint = t(`params.resolutionPromptHints.${normalizedTier}`, '');
   return hint ? `${prompt}\n\n${hint}` : prompt;
 }
 
@@ -729,6 +912,7 @@ function groupHistorySessions(items = []) {
     const key = historySessionKey(item);
     const urls = historyResultUrls(item);
     const displayUrls = Array.isArray(item.displayResultUrls) && item.displayResultUrls.length ? item.displayResultUrls : urls;
+    const resultItems = historyResultItems(item);
     const existing = map.get(key);
     if (!existing) {
       map.set(key, {
@@ -738,19 +922,22 @@ function groupHistorySessions(items = []) {
         recordIds: [item.id],
         resultUrls: urls,
         displayResultUrls: displayUrls,
+        resultItems,
         sessionCount: 1
       });
       continue;
     }
     const existingTime = Date.parse(existing.createdAt || '') || 0;
     const itemTime = Date.parse(item.createdAt || '') || 0;
+    const mergedResultItems = dedupeHistoryResultItems([...(existing.resultItems || []), ...resultItems]);
     map.set(key, {
       ...(itemTime >= existingTime ? { ...existing, ...item } : existing),
       id: existing.id,
       sessionId: existing.sessionId || item.sessionId || existing.id,
-      recordIds: [...existing.recordIds, item.id],
-      resultUrls: [...(existing.resultUrls || []), ...urls],
-      displayResultUrls: [...(existing.displayResultUrls || []), ...displayUrls],
+      recordIds: [...new Set([...(existing.recordIds || []), item.id])],
+      resultUrls: [...new Set([...(existing.resultUrls || []), ...urls])],
+      displayResultUrls: [...new Set([...(existing.displayResultUrls || []), ...displayUrls])],
+      resultItems: mergedResultItems,
       sessionCount: existing.sessionCount + 1
     });
   }
@@ -762,24 +949,45 @@ function groupHistorySessions(items = []) {
 }
 
 function currentSessionProject(session) {
-  if (!session?.canvasNodes?.length) return null;
+  const queueItems = Array.isArray(session?.generationQueue)
+    ? session.generationQueue.filter((item) => CURRENT_PROJECT_QUEUE_STATUSES.has(item?.status))
+    : [];
+  const messages = Array.isArray(session?.assistantMessages) ? session.assistantMessages : [];
+  const hasConversation = Boolean(String(session?.prompt || '').trim()) || messages.length > 0;
+  if (!session?.canvasNodes?.length && !queueItems.length && !hasConversation) return null;
   const nodes = session.canvasNodes || [];
   const imageNodes = nodes.filter((node) => node.kind !== 'video');
   const recordIds = [...new Set(nodes.map((node) => node?.downloadMeta?.id).filter(Boolean))];
   const firstNode = nodes[0] || {};
+  const firstQueueItem = queueItems[0] || {};
   const sessionId = session.sessionId || 'current-session';
   return {
     id: sessionId,
     sessionId,
     current: true,
+    titleKey: 'rail.currentSession',
     title: '当前会话',
-    prompt: session.prompt || firstNode.prompt || '',
+    prompt: session.prompt || firstNode.prompt || firstQueueItem.prompt || '',
     createdAt: session.updatedAt || session.timing?.startedAt || Date.now(),
     model: session.model,
     resultUrls: nodes.map((node) => node.url).filter(Boolean),
+    displayResultUrls: nodes.map((node) => node.url).filter(Boolean),
+    resultItems: nodes.map((node, index) => ({
+      id: node.id || `${sessionId}-${index}`,
+      recordId: node?.downloadMeta?.id || '',
+      url: node.url,
+      displayUrl: node.url,
+      prompt: node.prompt || '',
+      generationPrompt: node.generationPrompt || node.prompt || '',
+      model: node?.downloadMeta?.model || session.model || '',
+      createdAt: node.createdAt || session.updatedAt || '',
+      index
+    })).filter((item) => item.url || item.displayUrl),
     recordIds,
     canvasCount: nodes.length,
     imageCount: imageNodes.length,
+    queueCount: queueItems.length,
+    messageCount: messages.length,
     mode: session.mode || 'image'
   };
 }
@@ -902,6 +1110,33 @@ function saveHistory(items, scope = 'guest') {
       localStorage.removeItem(historyStorageKey(scope));
     }
   }
+  saveHistoryItems(scope, nextItems).catch(() => {
+    // IndexedDB is an expanded local cache; localStorage remains the fallback.
+  });
+}
+
+async function loadPersistedHistory(scope = 'guest') {
+  try {
+    const idbItems = await loadHistoryItems(scope);
+    if (Array.isArray(idbItems) && idbItems.length) {
+      return mergeHistoryRecords(idbItems, loadHistory(scope)).slice(0, LOCAL_HISTORY_LIMIT);
+    }
+  } catch {
+    // Fall back to the existing localStorage cache when IndexedDB is unavailable.
+  }
+  return loadHistory(scope);
+}
+
+function deletePersistedHistory(recordId, scope = 'guest') {
+  deleteHistoryItem(scope, recordId).catch(() => {
+    // IndexedDB cleanup is best-effort; the server/localStorage paths still run.
+  });
+}
+
+function clearPersistedHistory(scope = 'guest') {
+  clearHistoryItems(scope).catch(() => {
+    // IndexedDB cleanup is best-effort; the server/localStorage paths still run.
+  });
 }
 
 function storedResultUrls(urls) {
@@ -927,16 +1162,82 @@ function historyResultUrls(item) {
       : [];
 }
 
-function buildCanvasNodeFromHistoryItem(item, url, index = 0) {
+function historyResultItems(item) {
+  if (Array.isArray(item?.resultItems) && item.resultItems.length) {
+    return item.resultItems.map((result, index) => ({
+      id: String(result.id || `${item?.id || 'history'}-${index}`),
+      recordId: String(result.recordId || item?.id || ''),
+      url: result.url || result.displayUrl || '',
+      displayUrl: result.displayUrl || result.url || '',
+      prompt: result.prompt || result.generationPrompt || item?.prompt || item?.generationPrompt || item?.case?.promptPreview || '',
+      generationPrompt: result.generationPrompt || result.prompt || item?.generationPrompt || item?.prompt || item?.case?.promptPreview || '',
+      model: result.model || item?.model || '',
+      providerId: result.providerId || item?.providerId || item?.provider || '',
+      createdAt: result.createdAt || item?.createdAt || '',
+      outputFormat: result.outputFormat || item?.outputFormat || '',
+      index: Number.isFinite(result.index) ? result.index : index
+    })).filter((result) => result.url || result.displayUrl);
+  }
+
+  const displayUrls = Array.isArray(item?.displayResultUrls) && item.displayResultUrls.length ? item.displayResultUrls : [];
+  const resultUrls = Array.isArray(item?.resultUrls) ? item.resultUrls : [];
+  const urls = displayUrls.length ? displayUrls : resultUrls;
+  return urls.map((url, index) => ({
+    id: `${item?.id || 'history'}-${index}`,
+    recordId: item?.id || '',
+    url: resultUrls[index] || url,
+    displayUrl: displayUrls[index] || url,
+    prompt: item?.prompt || item?.generationPrompt || item?.case?.promptPreview || '',
+    generationPrompt: item?.generationPrompt || item?.prompt || item?.case?.promptPreview || '',
+    model: item?.model || '',
+    providerId: item?.providerId || item?.provider || '',
+    createdAt: item?.createdAt || '',
+    outputFormat: item?.outputFormat || '',
+    index
+  })).filter((result) => result.url || result.displayUrl);
+}
+
+function dedupeHistoryResultItems(items = []) {
+  const map = new Map();
+  for (const item of items) {
+    const key = `${item.recordId || ''}:${item.url || item.displayUrl || ''}:${item.index ?? ''}`;
+    if (!key.replace(/[:]/g, '')) continue;
+    if (!map.has(key)) map.set(key, item);
+  }
+  return [...map.values()];
+}
+
+function buildCanvasNodeFromHistoryItem(item, result, index = 0) {
+  const resultItem = typeof result === 'string'
+    ? { url: result, displayUrl: result }
+    : (result || {});
+  const url = resultItem.displayUrl || resultItem.url || '';
   const isVideo = item?.mode === 'video' || item?.kind === 'video';
+  const prompt = resultItem.generationPrompt || resultItem.prompt || item?.generationPrompt || item?.prompt || item?.case?.promptPreview || '';
+  const downloadMeta = {
+    ...downloadMetaFromHistoryItem({
+      ...item,
+      id: resultItem.recordId || resultItem.id || item?.id,
+      taskId: resultItem.taskId || item?.taskId,
+      createdAt: resultItem.createdAt || item?.createdAt,
+      generationPrompt: resultItem.generationPrompt || item?.generationPrompt,
+      prompt: resultItem.prompt || item?.prompt,
+      providerId: resultItem.providerId || item?.providerId,
+      provider: resultItem.provider || item?.provider,
+      model: resultItem.model || item?.model
+    }, isVideo),
+    model: resultItem.model || item?.model || ''
+  };
   return {
-    id: `history-${item?.id || Date.now()}-${index}`,
+    id: `history-${item?.id || Date.now()}-${resultItem.id || index}`,
     parentId: '',
     canvasIndex: index + 1,
     kind: isVideo ? 'video' : 'image',
     url,
-    prompt: item?.prompt || item?.generationPrompt || item?.case?.promptPreview || '',
-    downloadMeta: downloadMetaFromHistoryItem(item, isVideo),
+    sourceUrl: resultItem.url || url,
+    prompt,
+    generationPrompt: resultItem.generationPrompt || prompt,
+    downloadMeta,
     title: isVideo ? `#${index + 1}` : `#${index + 1}`,
     x: index * (CANVAS_NODE_WIDTH + CANVAS_NODE_HORIZONTAL_GAP),
     y: index % 2 ? 48 : -36,
@@ -1179,6 +1480,29 @@ function displayResultUrl(url) {
   return assetPath(resolveResultUrl(url));
 }
 
+function collectStateBlobUrls({ results = [], videoResults = [], canvasNodes = [], previewImage = null, previewVideo = null } = {}) {
+  const urls = new Set();
+  const collect = (value) => {
+    const url = String(value || '');
+    if (url.startsWith('blob:')) urls.add(url);
+  };
+  results.forEach(collect);
+  videoResults.forEach(collect);
+  canvasNodes.forEach((node) => {
+    collect(node?.url);
+    collect(node?.fallbackUrl);
+  });
+  collect(previewImage?.url);
+  collect(typeof previewVideo === 'string' ? previewVideo : previewVideo?.url);
+  return urls;
+}
+
+function revokeBlobUrls(urls) {
+  for (const url of urls || []) {
+    if (String(url || '').startsWith('blob:')) URL.revokeObjectURL(url);
+  }
+}
+
 function isProtectedStudioAsset(url) {
   const value = String(url || '');
   return value.startsWith('/studio-api/history/')
@@ -1197,7 +1521,7 @@ function safeImageCandidate(url) {
 
 function providerLabel(settings, apiKey) {
   if (settings.apiKeySource === 'manual') return settings.manualGatewayBaseUrl ? '自定义 API' : '自定义连接';
-  return apiKey?.name || 'Sub2API';
+  return apiKey?.name || 'Gateway Account';
 }
 
 function maskApiKey(value) {
@@ -1448,6 +1772,10 @@ function connectionReady(settings, apiKey, isAuthenticated) {
   return Boolean(isAuthenticated && apiKey?.key);
 }
 
+function usesGatewayAccount(settings) {
+  return settings?.apiKeySource !== 'manual';
+}
+
 function resolveProviderRequest(settings, apiKey) {
   if (settings.apiKeySource === 'manual') {
     return {
@@ -1523,6 +1851,7 @@ function Topbar({
             <button
               type="button"
               className={activeWorkspace === item.value ? 'active' : ''}
+              data-workspace={item.value}
               key={item.value}
               onClick={() => onWorkspaceChange(item.value)}
             >
@@ -1586,7 +1915,7 @@ function CategoryCard({ group, selected, onSelect }) {
   );
 }
 
-function CaseCard({ item, selected, onSelect, favorite, onToggleFavorite, onAppend }) {
+function CaseCard({ item, selected, onSelect, favorite, onToggleFavorite, onAppend, t = (key, fallback) => fallback || key }) {
   const image = templateThumbnail(item);
   const fallback = imageFallback(item);
   const risks = Array.isArray(item.riskTags) ? item.riskTags.slice(0, 3) : [];
@@ -1603,7 +1932,7 @@ function CaseCard({ item, selected, onSelect, favorite, onToggleFavorite, onAppe
           ) : null}
           <ImageIcon size={18} />
         </div>
-        <span>{typeof item.id === 'number' ? `#${item.id}` : '外部'}</span>
+        <span>{typeof item.id === 'number' ? `#${item.id}` : t('gallery.external', '外部')}</span>
         <strong>{item.title}</strong>
         {item.sourceName ? <em>{item.sourceName}</em> : null}
         {risks.length ? (
@@ -1619,8 +1948,8 @@ function CaseCard({ item, selected, onSelect, favorite, onToggleFavorite, onAppe
               event.stopPropagation();
               onAppend(item);
             }}
-            aria-label="追加模板提示词"
-            title="追加到当前提示词"
+            aria-label={t('gallery.appendPrompt', '追加模板提示词')}
+            title={t('gallery.appendToPrompt', '追加到当前提示词')}
           >
             <CirclePlus size={13} />
           </button>
@@ -1632,8 +1961,8 @@ function CaseCard({ item, selected, onSelect, favorite, onToggleFavorite, onAppe
             event.stopPropagation();
             onToggleFavorite(item);
           }}
-          aria-label={favorite ? '取消收藏模板' : '收藏模板'}
-          title={favorite ? '取消收藏' : '收藏模板'}
+          aria-label={favorite ? t('gallery.unfavoriteTemplate', '取消收藏模板') : t('gallery.favoriteTemplate', '收藏模板')}
+          title={favorite ? t('gallery.unfavorite', '取消收藏') : t('gallery.favoriteTemplate', '收藏模板')}
         >
           <Star size={13} />
         </button>
@@ -1663,10 +1992,11 @@ function VideoInspirationCard({ item, selected, onSelect }) {
   );
 }
 
-function HistoryCard({ item, selected, onSelect, onDelete }) {
-  const resultUrl = item.displayResultUrls?.[0] || item.resultUrls?.[0] || '';
+function HistoryCard({ item, selected, onSelect, onDelete, t = (key, fallback) => fallback || key }) {
+  const resultItems = historyResultItems(item);
+  const resultUrl = resultItems[0]?.displayUrl || resultItems[0]?.url || item.displayResultUrls?.[0] || item.resultUrls?.[0] || '';
   const thumbnail = safeImageCandidate(resultUrl || item.case?.image || '');
-  const resultCount = (item.displayResultUrls?.length || item.resultUrls?.length || 0);
+  const resultCount = resultItems.length || (item.displayResultUrls?.length || item.resultUrls?.length || 0);
   const usage = item.usageSummary || item.costSummary || '';
   const isVideo = item.mode === 'video' || item.kind === 'video';
   const extension = isVideo ? resultVideoExtension(resultUrl) : resultExtension(resultUrl, item.outputFormat || 'png');
@@ -1689,11 +2019,11 @@ function HistoryCard({ item, selected, onSelect, onDelete }) {
               fallback={<span className="historyThumbFallback"><History size={22} /></span>}
             />
           ) : isVideo ? <Video size={22} /> : <History size={22} />}
-          <small>{isVideo ? '视频' : `${Math.max(1, resultCount)} 张`}</small>
+          <small>{isVideo ? t('rail.video', '视频') : t('rail.imageCount', '{count} 张', { count: Math.max(1, resultCount) })}</small>
         </div>
         <div>
-          <span>{formatHistoryTime(item.createdAt)} · 会话 · {isVideo ? '视频' : `${Math.max(1, resultCount)} 张`}</span>
-          <strong>{isVideo ? '视频生成' : item.case?.title || compact(item.prompt, 24)}</strong>
+          <span>{formatHistoryTime(item.createdAt)} · {t('rail.session', '会话')} · {isVideo ? t('rail.video', '视频') : t('rail.imageCount', '{count} 张', { count: Math.max(1, resultCount) })}</span>
+          <strong>{isVideo ? t('rail.videoGeneration', '视频生成') : item.case?.title || compact(item.prompt, 24)}</strong>
           <p>{compact(item.prompt, 74)}</p>
           <em>{meta.join(' · ')}</em>
         </div>
@@ -1701,11 +2031,11 @@ function HistoryCard({ item, selected, onSelect, onDelete }) {
       <div className="historyActions">
         {resultUrl ? (
           <a href={displayResultUrl(resultUrl)} download={downloadName} onClick={(event) => event.stopPropagation()}>
-            <Download size={14} /> 下载
+            <Download size={14} /> {t('canvas.download', '下载')}
           </a>
         ) : null}
-        <button type="button" onClick={() => onDelete(item.id)}>
-          <Trash2 size={14} /> 删除
+        <button type="button" onClick={() => onDelete(item)}>
+          <Trash2 size={14} /> {t('canvas.delete', '删除')}
         </button>
       </div>
     </div>
@@ -1740,7 +2070,8 @@ function GalleryWorkspacePanel({
   onToggleTemplateFavorite,
   onAppendTemplate,
   licenseNotice,
-  onOpenWorkspace
+  onOpenWorkspace,
+  t = (key, fallback) => fallback || key
 }) {
   const [visibleLimit, setVisibleLimit] = useState(INITIAL_TEMPLATE_LIMIT);
   const [activeKind, setActiveKind] = useState('image');
@@ -1753,10 +2084,23 @@ function GalleryWorkspacePanel({
     if (!videoNeedle) return true;
     return `${item.title} ${item.intent} ${item.summary}`.toLowerCase().includes(videoNeedle);
   });
+  const visibleVideoItems = visibleVideoInspirations.slice(0, visibleLimit);
+  const videoLocalHasMore = visibleLimit < visibleVideoInspirations.length;
+  const historySessionItems = useMemo(() => groupHistorySessions(historyItems || []), [historyItems]);
+  const visibleHistoryItems = historySessionItems.slice(0, visibleLimit);
+  const historyLocalHasMore = visibleLimit < historySessionItems.length;
+  const selectedHistoryItem = useMemo(() => {
+    if (!isHistory || !selectedHistoryId) return null;
+    return historySessionItems.find((item) => (
+      selectedHistoryId === item.id
+      || selectedHistoryId === item.sessionId
+      || item.recordIds?.includes?.(selectedHistoryId)
+    )) || null;
+  }, [historySessionItems, isHistory, selectedHistoryId]);
 
   useEffect(() => {
     setVisibleLimit(INITIAL_TEMPLATE_LIMIT);
-  }, [category, query, activeKind]);
+  }, [category, query, activeKind, type]);
 
   const selectLibraryItem = (item) => {
     onSelect(item);
@@ -1765,83 +2109,96 @@ function GalleryWorkspacePanel({
 
   if (isHistory) {
     return (
-      <section className="galleryWorkspacePanel historyGalleryWorkspace" aria-label="历史图库">
+      <section className="galleryWorkspacePanel historyGalleryWorkspace" aria-label={t('workspace.history', '历史图库')}>
         <div className="galleryWorkspaceHead">
           <div>
-            <span>历史图库</span>
-            <h2>按会话保留每一次生成</h2>
-            <p>点击任意记录会把图片放回画布，并继续基于这一轮创作。</p>
+            <span>{t('workspace.history', '历史图库')}</span>
+            <h2>{t('gallery.historyTitle', '按会话保留每一次生成')}</h2>
+            <p>{t('gallery.historyHint', '点击任意记录会把图片放回画布，并继续基于这一轮创作。')}</p>
           </div>
           <div className="galleryWorkspaceActions">
             {historyItems.length ? (
               <button type="button" className="secondaryButton" onClick={onClearHistory}>
                 <Trash2 size={15} />
-                清空
+                {t('gallery.clear', '清空')}
               </button>
             ) : null}
             <button type="button" className="primaryAction" onClick={() => onOpenWorkspace?.('image')}>
               <Sparkles size={16} />
-              回到创作
+              {t('gallery.backToCreate', '回到创作')}
             </button>
           </div>
         </div>
         {historyItems.length ? (
           <div className="historyGalleryGrid">
-            {historyItems.map((item) => (
+            {visibleHistoryItems.map((item) => (
               <HistoryCard
                 item={item}
-                selected={selectedHistoryId === item.id}
+                selected={selectedHistoryId === item.id || selectedHistoryId === item.sessionId}
                 onSelect={onSelectHistory}
                 onDelete={onDeleteHistory}
+                t={t}
                 key={item.id}
               />
             ))}
-            {historyHasMore ? (
-              <button type="button" className="loadMoreButton galleryLoadMore" onClick={onLoadMoreHistory} disabled={historyLoadingMore}>
-                {historyLoadingMore ? '正在加载' : '加载更多历史'}
+            {historyLocalHasMore || historyHasMore ? (
+              <button
+                type="button"
+                className="loadMoreButton galleryLoadMore"
+                onClick={() => {
+                  if (historyLocalHasMore) {
+                    setVisibleLimit((value) => value + TEMPLATE_PAGE_SIZE);
+                    return;
+                  }
+                  onLoadMoreHistory?.();
+                }}
+                disabled={!historyLocalHasMore && historyLoadingMore}
+              >
+                {historyLoadingMore ? t('gallery.loading', '正在加载') : t('gallery.loadMoreHistory', '加载更多历史')}
               </button>
             ) : null}
           </div>
         ) : (
           <div className="workspaceEmptyPanel">
             <History size={34} />
-            <h2>{historyStatus === 'loading' ? '正在加载历史图库' : '还没有历史图片'}</h2>
-            <p>生成完成后会自动出现在当前会话和历史图库里。</p>
+            <h2>{historyStatus === 'loading' ? t('gallery.loadingHistory', '正在加载历史图库') : t('gallery.noHistory', '还没有历史图片')}</h2>
+            <p>{t('gallery.noHistoryHint', '生成完成后会自动出现在当前会话和历史图库里。')}</p>
           </div>
         )}
+        <HistoryDetailPanel item={selectedHistoryItem} onOpenWorkspace={onOpenWorkspace} t={t} />
       </section>
     );
   }
 
   return (
-    <section className="galleryWorkspacePanel inspirationWorkspace" aria-label="灵感库">
+    <section className="galleryWorkspacePanel inspirationWorkspace" aria-label={t('workspace.inspiration', '灵感库')}>
       <div className="galleryWorkspaceHead">
         <div>
-          <span>灵感库</span>
-          <h2>选择分类，把提示词带入创作会话</h2>
-          <p>上方是创作意图，下方是灵感推荐；点击模板会进入中间对话框继续调整。</p>
+          <span>{t('workspace.inspiration', '灵感库')}</span>
+          <h2>{t('gallery.inspirationTitle', '选择分类，把提示词带入创作会话')}</h2>
+          <p>{t('gallery.inspirationHint', '上方是创作意图，下方是灵感推荐；点击模板会进入中间对话框继续调整。')}</p>
         </div>
         <div className="galleryWorkspaceActions">
-          <div className="galleryKindSwitch" role="group" aria-label="灵感类型">
+          <div className="galleryKindSwitch" role="group" aria-label={t('gallery.inspirationType', '灵感类型')}>
             <button type="button" className={!isVideo ? 'active' : ''} onClick={() => setActiveKind('image')}>
               <ImageIcon size={15} />
-              图片
+              {t('workspace.image', '图片创作')}
             </button>
             <button type="button" className={isVideo ? 'active' : ''} onClick={() => setActiveKind('video')}>
               <Video size={15} />
-              视频
+              {t('workspace.video', '视频创作')}
             </button>
           </div>
           <button type="button" className="primaryAction" onClick={() => onOpenWorkspace?.(isVideo ? 'video' : 'image')}>
             <MessageSquareText size={16} />
-            打开会话
+            {t('gallery.openConversation', '打开会话')}
           </button>
         </div>
       </div>
       <div className="galleryWorkspaceToolbar">
         <label className="gallerySearch">
           <Search size={16} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isVideo ? '搜索视频灵感' : '搜索图片模板'} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isVideo ? t('gallery.searchVideo', '搜索视频灵感') : t('gallery.searchImage', '搜索图片模板')} />
         </label>
         {!isVideo ? (
           <>
@@ -1851,11 +2208,11 @@ function GalleryWorkspacePanel({
               onClick={onToggleFavoritesOnly}
             >
               <Star size={15} />
-              {showFavoritesOnly ? '已收藏' : `收藏 ${favoriteTemplates.size}`}
+              {showFavoritesOnly ? t('gallery.favorited', '已收藏') : t('gallery.favoriteCount', '收藏 {count}', { count: favoriteTemplates.size })}
             </button>
             {browsingCategory ? (
               <button type="button" className="galleryFilterButton" onClick={() => { setCategory('All'); setQuery(''); }}>
-                返回分类
+                {t('gallery.backToCategories', '返回分类')}
               </button>
             ) : null}
           </>
@@ -1865,17 +2222,26 @@ function GalleryWorkspacePanel({
         {loading ? (
           <div className="workspaceEmptyPanel">
             <ImageIcon size={34} />
-            <h2>正在加载灵感</h2>
-            <p>素材库和提示词加载完成后会出现在这里。</p>
+            <h2>{t('gallery.loadingInspiration', '正在加载灵感')}</h2>
+            <p>{t('gallery.loadingInspirationHint', '素材库和提示词加载完成后会出现在这里。')}</p>
           </div>
         ) : isVideo ? (
-          visibleVideoInspirations.length ? visibleVideoInspirations.map((item) => (
+          visibleVideoInspirations.length ? (
+            <>
+              {visibleVideoItems.map((item) => (
             <VideoInspirationCard item={item} selected={selected?.id === item.id} onSelect={selectLibraryItem} key={item.id} />
-          )) : (
+              ))}
+              {videoLocalHasMore ? (
+                <button type="button" className="loadMoreButton galleryLoadMore" onClick={() => setVisibleLimit((value) => value + TEMPLATE_PAGE_SIZE)}>
+                  {t('gallery.loadMoreCount', '加载更多 {visible}/{total}', { visible: Math.min(visibleLimit, visibleVideoInspirations.length), total: visibleVideoInspirations.length })}
+                </button>
+              ) : null}
+            </>
+          ) : (
             <div className="workspaceEmptyPanel">
               <Video size={34} />
-              <h2>没有匹配的视频灵感</h2>
-              <p>换一个关键词再试试。</p>
+              <h2>{t('gallery.noVideoMatch', '没有匹配的视频灵感')}</h2>
+              <p>{t('gallery.tryAnotherKeyword', '换一个关键词再试试。')}</p>
             </div>
           )
         ) : browsingCategory ? (
@@ -1888,12 +2254,13 @@ function GalleryWorkspacePanel({
                 favorite={favoriteTemplates.has(templateKey(item))}
                 onToggleFavorite={onToggleTemplateFavorite}
                 onAppend={onAppendTemplate}
+                t={t}
                 key={item.id}
               />
             ))}
             {visibleLimit < cases.length ? (
               <button type="button" className="loadMoreButton galleryLoadMore" onClick={() => setVisibleLimit((value) => value + TEMPLATE_PAGE_SIZE)}>
-                加载更多 {Math.min(visibleLimit, cases.length)}/{cases.length}
+                {t('gallery.loadMoreCount', '加载更多 {visible}/{total}', { visible: Math.min(visibleLimit, cases.length), total: cases.length })}
               </button>
             ) : null}
           </>
@@ -1908,7 +2275,7 @@ function GalleryWorkspacePanel({
           <span>{licenseNotice?.name || COMMUNITY_LICENSE_NOTICE.name}</span>
           <p>{licenseNotice?.notice || licenseNotice?.text || COMMUNITY_LICENSE_NOTICE.text}</p>
           <a href={licenseNotice?.url || COMMUNITY_LICENSE_NOTICE.url} target="_blank" rel="noreferrer">CC BY 4.0</a>
-          <strong>{browsingCategory ? `${cases.length}/${totalCaseCount}` : `${categoryGroups.length} 类`}</strong>
+          <strong>{browsingCategory ? `${cases.length}/${totalCaseCount}` : t('gallery.categoryCount', '{count} 类', { count: categoryGroups.length })}</strong>
         </div>
       ) : null}
     </section>
@@ -1945,9 +2312,10 @@ function LeftRail({
   const currentProjectId = currentProject?.sessionId || currentProject?.id || '';
   const currentRecordIds = new Set(currentProject?.recordIds || []);
   const currentLanguage = SUPPORTED_LANGUAGES.find((item) => item.value === language) || SUPPORTED_LANGUAGES[0];
+  const historySessionItems = groupHistorySessions(historyItems || []);
   const recentProjectItems = [
     currentProject,
-    ...groupHistorySessions(historyItems || []).filter((item) => {
+    ...historySessionItems.filter((item) => {
       const itemId = item.sessionId || item.id;
       if (itemId === currentProjectId) return false;
       return !(item.recordIds || [item.id]).some((recordId) => currentRecordIds.has(recordId));
@@ -1970,7 +2338,7 @@ function LeftRail({
           aria-label={t('rail.history', '历史图库')}
         >
           <History size={18} />
-          <span>{historyItems.length}</span>
+          <span>{historySessionItems.length}</span>
         </button>
         <button
           type="button"
@@ -2038,8 +2406,13 @@ function LeftRail({
           <div className="sideProjectList">
             {recentProjectItems.map((item, index) => {
               const isVideo = item.mode === 'video' || item.kind === 'video';
-              const urls = historyResultUrls(item);
-              const title = item.title || (isVideo ? t('rail.videoGeneration', '视频生成') : item.case?.title || compact(item.prompt, 24) || t('rail.unnamedSession', '未命名会话'));
+              const resultItems = historyResultItems(item);
+              const urls = resultItems.length
+                ? resultItems.map((result) => result.displayUrl || result.url).filter(Boolean)
+                : historyResultUrls(item);
+              const title = item.titleKey
+                ? t(item.titleKey, item.title || '')
+                : item.title || (isVideo ? t('rail.videoGeneration', '视频生成') : item.case?.title || compact(item.prompt, 24) || t('rail.unnamedSession', '未命名会话'));
               const count = urls.length;
               const thumb = safeImageCandidate(urls[0] || item.case?.image || item.case?.thumbnail || '');
               const orderLabel = item.current ? t('rail.current', '当前') : `#${index}`;
@@ -2051,10 +2424,19 @@ function LeftRail({
                 ? t('rail.nodeCount', '{count} 节点', { count: item.canvasCount })
                 : isVideo
                   ? t('rail.video', '视频')
-                  : t('rail.imageCount', '{count} 张', { count: Math.max(1, count) });
+                  : count
+                    ? t('rail.imageCount', '{count} 张', { count })
+                    : item.queueCount
+                      ? t('rail.taskCount', '{count} 个任务', { count: item.queueCount })
+                      : t('rail.noResultYet', '待生成');
               const summary = compact(item.prompt || item.generationPrompt || item.case?.promptPreview || '', 34);
+              const activeRecordIds = item.recordIds || [item.id];
+              const isActiveProject = item.current
+                || selectedHistoryId === item.id
+                || selectedHistoryId === item.sessionId
+                || activeRecordIds.includes(selectedHistoryId);
               return (
-                <div className={`sideProjectItem ${item.current || selectedHistoryId === item.id ? 'active' : ''}`} key={item.id}>
+                <div className={`sideProjectItem ${isActiveProject ? 'active' : ''}`} key={item.id}>
                   <button
                     type="button"
                     className="sideProjectOpen"
@@ -2095,7 +2477,7 @@ function LeftRail({
                         onNewSession();
                         return;
                       }
-                      (item.recordIds || [item.id]).forEach((recordId) => onDeleteHistory(recordId));
+                      onDeleteHistory(item);
                     }}
                     aria-label={`删除 ${title}`}
                     title={item.current ? t('rail.clearCurrent', '清空当前会话') : t('rail.delete', '删除')}
@@ -2144,34 +2526,34 @@ function LeftRail({
     </aside>
   );
 }
-function progressText(progress, fallbackMessage) {
+function progressText(progress, fallbackMessage, t = (key, fallback) => fallback || key) {
   if (!progress || progress.stage === 'idle') return fallbackMessage || '';
-  if (progress.stage === 'request') return '已提交';
-  if (progress.stage === 'connected') return '已连接';
-  if (progress.stage === 'queued') return '排队中';
-  if (progress.stage === 'dispatching') return '提交上游';
-  if (progress.stage === 'upstream') return '生成中';
-  if (progress.stage === 'video') return '视频生成中';
-  if (progress.stage === 'partial') return `预览 ${progress.partials || 1}`;
-  if (progress.stage === 'pending_review') return '待确认';
+  if (progress.stage === 'request') return t('progress.submitted', '已提交');
+  if (progress.stage === 'connected') return t('progress.connected', '已连接');
+  if (progress.stage === 'queued') return t('progress.queued', '排队中');
+  if (progress.stage === 'dispatching') return t('progress.dispatching', '提交上游');
+  if (progress.stage === 'upstream') return t('progress.generating', '生成中');
+  if (progress.stage === 'video') return t('progress.videoGenerating', '视频生成中');
+  if (progress.stage === 'partial') return t('progress.preview', '预览 {count}', { count: progress.partials || 1 });
+  if (progress.stage === 'pending_review') return t('progress.review', '待确认');
   if (progress.stage === 'image') return `${progress.completed || 1}/${progress.total || 1}`;
-  if (progress.stage === 'saving') return '保存中';
-  if (progress.stage === 'completed') return '完成';
-  if (progress.stage === 'succeeded') return '完成';
-  if (progress.stage === 'canceled') return '已取消';
-  if (progress.stage === 'failed') return '已停止';
+  if (progress.stage === 'saving') return t('progress.saving', '保存中');
+  if (progress.stage === 'completed') return t('progress.completed', '完成');
+  if (progress.stage === 'succeeded') return t('progress.completed', '完成');
+  if (progress.stage === 'canceled') return t('progress.canceled', '已取消');
+  if (progress.stage === 'failed') return t('progress.failed', '已停止');
   return fallbackMessage || '';
 }
 
-function ProgressBar({ progress, active }) {
+function ProgressBar({ progress, active, t = (key, fallback) => fallback || key }) {
   if (!active && progress.stage !== 'completed' && progress.stage !== 'failed' && progress.stage !== 'pending_review') return null;
   const percent = Math.max(0, Math.min(100, Number(progress.percent || 0)));
   const steps = [
-    { key: 'request', label: '提交' },
-    { key: 'queued', label: '排队' },
-    { key: 'image', label: '生成' },
-    { key: 'saving', label: '保存' },
-    { key: 'completed', label: '完成' }
+    { key: 'request', label: t('progress.stepSubmit', '提交') },
+    { key: 'queued', label: t('progress.stepQueue', '排队') },
+    { key: 'image', label: t('progress.stepGenerate', '生成') },
+    { key: 'saving', label: t('progress.stepSave', '保存') },
+    { key: 'completed', label: t('progress.stepDone', '完成') }
   ];
   const stageOrder = {
     idle: -1,
@@ -2192,9 +2574,9 @@ function ProgressBar({ progress, active }) {
   };
   const activeIndex = stageOrder[progress.stage] ?? 0;
   return (
-    <div className={`generationProgress ${progress.stage === 'failed' ? 'failed' : ''} ${progress.stage === 'pending_review' ? 'pendingReview' : ''}`} aria-label="生成进度">
+    <div className={`generationProgress ${progress.stage === 'failed' ? 'failed' : ''} ${progress.stage === 'pending_review' ? 'pendingReview' : ''}`} aria-label={t('progress.aria', '生成进度')}>
       <div>
-        <span>{progressText(progress)}</span>
+        <span>{progressText(progress, '', t)}</span>
         <strong>{percent}%</strong>
       </div>
       <div className="progressTrack">
@@ -2209,33 +2591,33 @@ function ProgressBar({ progress, active }) {
   );
 }
 
-function GenerationTimingPanel({ timing }) {
+function GenerationTimingPanel({ timing, t = (key, fallback) => fallback || key }) {
   if (!timing) return null;
   const firstMs = timing.firstByteAt ? timing.firstByteAt - timing.startedAt : null;
   const totalMs = (timing.completedAt || Date.now()) - timing.startedAt;
-  const title = timing.status === 'running' ? '生成计时中' : timing.status === 'failed' ? '生成已停止' : '生成完成';
+  const title = timing.status === 'running' ? t('timing.running', '生成计时中') : timing.status === 'failed' ? t('timing.failed', '生成已停止') : t('timing.done', '生成完成');
   return (
     <div className="generationTimingPanel">
       <div>
         <Clock size={15} />
         <strong>{title}</strong>
-        <span>响应=首次收到上游数据；总用时=点击生成到当前状态</span>
+        <span>{t('timing.hint', '响应=首次收到上游数据；总用时=点击生成到当前状态')}</span>
       </div>
       <dl>
         <div>
-          <dt>响应</dt>
-          <dd>{firstMs === null ? '等待中' : formatDuration(firstMs)}</dd>
+          <dt>{t('timing.response', '响应')}</dt>
+          <dd>{firstMs === null ? t('timing.waiting', '等待中') : formatDuration(firstMs)}</dd>
         </div>
         <div>
-          <dt>总用时</dt>
+          <dt>{t('timing.total', '总用时')}</dt>
           <dd>{formatDuration(totalMs)}</dd>
         </div>
         <div>
-          <dt>模型</dt>
+          <dt>{t('params.model', '模型')}</dt>
           <dd>{timing.model || '--'}</dd>
         </div>
         <div>
-          <dt>规格</dt>
+          <dt>{t('timing.spec', '规格')}</dt>
           <dd>{timing.spec || '--'}</dd>
         </div>
       </dl>
@@ -2243,30 +2625,71 @@ function GenerationTimingPanel({ timing }) {
   );
 }
 
-function generationQueueStatusLabel(status) {
-  if (status === 'running') return '生成中';
-  if (status === 'done') return '完成';
-  if (status === 'failed') return '失败';
-  return '排队中';
+function generationQueueStatusLabel(status, t = (key, fallback) => fallback || key) {
+  if (status === 'running') return t('composer.queueStatusRunning', '生成中');
+  if (status === 'done') return t('composer.queueStatusDone', '完成');
+  if (status === 'failed') return t('composer.queueStatusFailed', '已中断');
+  if (status === 'canceled') return t('composer.queueStatusCanceled', '已取消');
+  if (status === 'unknown') return t('composer.queueStatusUnknown', '结果未知');
+  return t('composer.queueStatusQueued', '排队中');
 }
 
-function generationErrorMessage(error) {
+function generationQueueSummary(item, t = (key, fallback, values) => {
+  if (!values) return fallback || key;
+  return Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), fallback || key);
+}) {
+  if (item?.status === 'failed' && item?.error) {
+    return generationErrorMessage({
+      ...item.error,
+      message: item.error.message || item.summary || 'GENERATION_JOB_FAILED',
+      status: item.error.status,
+      requestId: item.error.requestId || item.requestIds?.[0] || ''
+    }, t);
+  }
+  return item?.summary || '';
+}
+
+function generationQueueHeadline(items, t = (key, fallback) => fallback || key) {
+  const countStatus = (status) => items.filter((item) => item?.status === status).length;
+  const running = countStatus('running');
+  const queued = countStatus('queued');
+  const failed = countStatus('failed');
+  const unknown = countStatus('unknown');
+  const canceled = countStatus('canceled');
+  const done = countStatus('done');
+  const parts = [];
+  parts.push(running ? t('composer.queueRunning', '1 个生成中') : t('composer.queueIdle', '当前空闲'));
+  if (queued) parts.push(t('composer.queueWaiting', '{count} 个排队', { count: queued }));
+  if (failed + unknown) parts.push(t('composer.queueNeedsReview', '{count} 个需确认', { count: failed + unknown }));
+  if (canceled) parts.push(t('composer.queueCanceledNotice', '{count} 个已取消', { count: canceled }));
+  if (done) parts.push(t('composer.queueDoneNotice', '{count} 个完成提示', { count: done }));
+  if (!queued && !failed && !unknown && !canceled && !done) parts.push(t('composer.queueWaiting', '{count} 个排队', { count: 0 }));
+  return parts.join(' · ');
+}
+
+function generationErrorMessage(error, t = (key, fallback, values) => {
+  if (!values) return fallback || key;
+  return Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), fallback || key);
+}) {
   const message = String(
     error?.payload?.error?.message
       || error?.payload?.message
       || error?.payload?.response?.error?.message
       || error?.message
-      || '生成失败'
+      || t('errors.generationFailed', '生成失败')
   );
 
   const lowered = message.toLowerCase();
   const requestId = errorRequestId(error, message);
-  const requestSuffix = requestId ? ` 请求 ID：${requestId}` : '';
+  const requestSuffix = requestId ? t('errors.requestIdSuffix', ' 请求 ID：{requestId}', { requestId }) : '';
   if (error?.code === 'GENERATION_STOPPED' || lowered.includes('generation_stopped')) {
-    return '已停止本页等待。若请求已经到达上游，仍可能继续处理或产生扣费；请先查看当前画布/历史图库，确认没有新结果后再重试。';
+    return t('errors.stopped', '已停止本页等待。若请求已经到达上游，仍可能继续处理或产生扣费；请先查看当前画布/历史图库，确认没有新结果后再重试。');
   }
-  if (error?.code === 'GENERATION_TIMEOUT' || lowered.includes('generation_timeout') || lowered.includes('timed out') || lowered.includes('timeout')) {
-    return `前端等待超时，这次页面已结束等待；这不代表上游已经取消。本次请求可能仍在处理、排队或已经扣费，请稍后查看历史图库/当前画布，再决定是否重试。${requestSuffix}`;
+  if (error?.code === 'GENERATION_TIMEOUT' || error?.code === 'JOB_TIMEOUT' || lowered.includes('generation_timeout') || lowered.includes('job_timeout') || lowered.includes('timed out') || lowered.includes('timeout')) {
+    return `${t('errors.timeout', '前端等待超时，这次页面已结束等待；这不代表上游已经取消。本次请求可能仍在处理、排队或已经扣费，请稍后查看历史图库/当前画布，再决定是否重试。')}${requestSuffix}`;
+  }
+  if (lowered.includes('origin_not_allowed') || lowered.includes('origin not allowed')) {
+    return t('errors.originNotAllowed', '生成请求被创作台服务拦截：当前页面来源没有加入 STUDIO_ALLOWED_ORIGINS 白名单。请更新并重启 history/session 服务，或把当前访问地址加入允许来源后再试。');
   }
   if (
     lowered.includes('request was rejected by the safety system')
@@ -2276,49 +2699,49 @@ function generationErrorMessage(error) {
     || lowered.includes('safety policy')
     || lowered.includes('policy_violation')
   ) {
-    return `提示词或参考图触发了上游安全策略，生成已被拒绝。请弱化敏感描述，去掉真实人物、未成年人、暴力色情、仿冒名人等高风险内容后重试。${requestSuffix}`;
+    return `${t('errors.safety', '提示词或参考图触发了上游安全策略，生成已被拒绝。请弱化敏感描述，去掉真实人物、未成年人、暴力色情、仿冒名人等高风险内容后重试。')}${requestSuffix}`;
   }
   if (lowered.includes('no images') || lowered.includes('returned_no_images') || lowered.includes('没有返回图片')) {
-    return `上游请求结束，但没有返回可用图片。通常是模型拒绝、参数不兼容或网关没有透传结果，请换一版提示词或调整模型/尺寸后重试。${requestSuffix}`;
+    return `${t('errors.noImages', '上游请求结束，但没有返回可用图片。通常是模型拒绝、参数不兼容或网关没有透传结果，请换一版提示词或调整模型/尺寸后重试。')}${requestSuffix}`;
   }
   if (lowered.includes('upstream request failed') || lowered.includes('upstream response failed') || lowered.includes('upstream') || lowered.includes('context canceled')) {
-    return `请求已经进入中转站，但上游模型服务没有正常返回图片。请在后台按请求 ID 查看最终状态；如果只有重试/切换日志没有成功记录，建议换 Key、降低数量或稍后重试。${requestSuffix}`;
+    return `${t('errors.upstream', '请求已经进入中转站，但上游模型服务没有正常返回图片。请在后台按请求 ID 查看最终状态；如果只有重试/切换日志没有成功记录，建议换 Key、降低数量或稍后重试。')}${requestSuffix}`;
   }
   if (error?.status === 400 || lowered.includes('invalid request') || lowered.includes('invalid_request') || lowered.includes('invalid parameter') || lowered.includes('invalid_value')) {
     if (lowered.includes('size') || lowered.includes('quality') || lowered.includes('model')) {
-      return `请求参数不被当前模型支持，请检查模型、尺寸、质量或数量设置。${requestSuffix}`;
+      return `${t('errors.unsupportedParams', '请求参数不被当前模型支持，请检查模型、尺寸、质量或数量设置。')}${requestSuffix}`;
     }
-    return `请求参数有误，生成已停止。请检查提示词、模型、尺寸、数量和参考图设置。${requestSuffix}`;
+    return `${t('errors.invalidParams', '请求参数有误，生成已停止。请检查提示词、模型、尺寸、数量和参考图设置。')}${requestSuffix}`;
   }
   if (error?.status === 401 || lowered.includes('unauthorized') || lowered.includes('invalid token') || lowered.includes('invalid api key') || lowered.includes('incorrect api key')) {
-    return '账号登录或密钥已失效，请重新登录或更换密钥。';
+    return t('errors.unauthorized', '账号登录或密钥已失效，请重新登录或更换密钥。');
   }
   if (error?.status === 402 || lowered.includes('insufficient') || lowered.includes('balance') || lowered.includes('quota') || lowered.includes('credit') || lowered.includes('billing')) {
-    return '当前账号余额或额度不足，生成已停止。';
+    return t('errors.billing', '当前账号余额或额度不足，生成已停止。');
   }
   if (error?.status === 403 || lowered.includes('forbidden') || lowered.includes('permission') || lowered.includes('not allowed') || lowered.includes('model_not_found')) {
-    return '当前账号没有调用该模型或接口的权限，生成已停止。';
+    return t('errors.forbidden', '当前账号没有调用该模型或接口的权限，生成已停止。');
   }
   if (error?.status === 404 || lowered.includes('not found')) {
-    return `接口或模型不存在。请确认网关地址、接口类型和模型名称是否正确。${requestSuffix}`;
+    return `${t('errors.notFound', '接口或模型不存在。请确认网关地址、接口类型和模型名称是否正确。')}${requestSuffix}`;
   }
   if (error?.status === 408 || error?.status === 504 || lowered.includes('gateway timeout') || lowered.includes('upstream timeout')) {
-    return `网关响应超时，本页没有继续收到结果；如果请求已经提交上游，仍可能产生扣费。请稍后查看历史图库，再决定是否降低数量/质量重试。${requestSuffix}`;
+    return `${t('errors.gatewayTimeout', '网关响应超时，本页没有继续收到结果；如果请求已经提交上游，仍可能产生扣费。请稍后查看历史图库，再决定是否降低数量/质量重试。')}${requestSuffix}`;
   }
   if (error?.status === 429 || lowered.includes('rate limit') || lowered.includes('too many requests')) {
-    return '当前账号或接口触发限流，生成已停止。请稍后重试。';
+    return t('errors.rateLimit', '当前账号或接口触发限流，生成已停止。请稍后重试。');
   }
   if (error?.status >= 500 || lowered.includes('internal server error') || lowered.includes('bad gateway') || lowered.includes('service unavailable')) {
-    return `上游服务暂时不可用，生成已停止。请稍后重试；如果反复出现，可能是中转站或模型服务异常。${requestSuffix}`;
+    return `${t('errors.serviceUnavailable', '上游服务暂时不可用，生成已停止。请稍后重试；如果反复出现，可能是中转站或模型服务异常。')}${requestSuffix}`;
   }
   if (lowered.includes('failed to fetch') || lowered.includes('networkerror') || lowered.includes('network error')) {
-    return '网络连接中断，本页没有收到完整结果；如果请求已经发出，上游可能仍在处理或已经计费。请先检查历史图库/当前画布，再决定是否重试。';
+    return t('errors.network', '网络连接中断，本页没有收到完整结果；如果请求已经发出，上游可能仍在处理或已经计费。请先检查历史图库/当前画布，再决定是否重试。');
   }
   if (error?.name === 'AbortError') {
-    return '本页监听已停止；如果请求已经到达上游，仍可能继续处理或产生扣费。';
+    return t('errors.abort', '本页监听已停止；如果请求已经到达上游，仍可能继续处理或产生扣费。');
   }
   if (/^[\u0000-\u007F]*$/.test(message) && /[A-Za-z]/.test(message)) {
-    return `生成失败。上游返回了未识别的英文错误，请稍后重试，或调整模型/尺寸/数量后再试。原始信息：${compact(message, 180)}`;
+    return t('errors.unknownEnglish', '生成失败。上游返回了未识别的英文错误，请稍后重试，或调整模型/尺寸/数量后再试。原始信息：{message}', { message: compact(message, 180) });
   }
   return message;
 }
@@ -2434,6 +2857,7 @@ function PromptSectionList({ prompt, t = (key, fallback) => fallback || key }) {
 
 function Lightbox({ url, index, outputFormat = 'png', downloadMeta, onClose, t = (key, fallback) => fallback || key }) {
   if (!url) return null;
+  const isReferencePreview = downloadMeta?.mode === 'reference';
   const extension = resultExtension(url, outputFormat);
   const downloadName = buildStudioDownloadFilename({
     ...(downloadMeta || {}),
@@ -2454,17 +2878,17 @@ function Lightbox({ url, index, outputFormat = 'png', downloadMeta, onClose, t =
       if (event.target === event.currentTarget) onClose();
     }}>
       <figure className="lightboxPanel">
-        <button type="button" className="iconButton" onClick={onClose} aria-label="关闭">
+        <button type="button" className="iconButton" onClick={onClose} aria-label={t('settings.close', '关闭')}>
           <X size={18} />
         </button>
         <div className="lightboxImageStage">
-          <img src={url} alt={`${t('lightbox.imageAlt', '生成结果')} ${index + 1}`} />
+          <img src={url} alt={`${isReferencePreview ? t('references.title', '参考图') : t('lightbox.imageAlt', '生成结果')} ${index + 1}`} />
         </div>
         <aside className="lightboxPromptPanel">
           <div className="lightboxPromptHead">
             <div>
-              <span>{t('lightbox.promptLabel', '完整提示词')}</span>
-              <strong>#{index + 1}</strong>
+              <span>{isReferencePreview ? t('references.preview', '查看参考图') : t('lightbox.promptLabel', '完整提示词')}</span>
+              <strong>{isReferencePreview ? t('references.referenceIndex', '参考 {index}', { index: index + 1 }) : `#${index + 1}`}</strong>
             </div>
             {promptText ? (
               <button type="button" onClick={() => navigator.clipboard?.writeText(promptText)}>
@@ -2481,7 +2905,7 @@ function Lightbox({ url, index, outputFormat = 'png', downloadMeta, onClose, t =
           <PromptSectionList prompt={promptText} t={t} />
         </aside>
         <figcaption>
-          <span>#{index + 1}</span>
+          <span>{isReferencePreview ? t('references.referenceIndex', '参考 {index}', { index: index + 1 }) : `#${index + 1}`}</span>
           <a href={url} download={downloadName}>
             <Download size={16} />
             下载
@@ -2492,7 +2916,7 @@ function Lightbox({ url, index, outputFormat = 'png', downloadMeta, onClose, t =
   );
 }
 
-function VideoLightbox({ url, index = 0, downloadMeta, onClose }) {
+function VideoLightbox({ url, index = 0, downloadMeta, onClose, t = (key, fallback) => fallback || key }) {
   if (!url) return null;
   const extension = resultVideoExtension(url);
   const downloadName = buildStudioDownloadFilename({
@@ -2506,15 +2930,15 @@ function VideoLightbox({ url, index = 0, downloadMeta, onClose }) {
       if (event.target === event.currentTarget) onClose();
     }}>
       <figure className="lightboxPanel videoLightboxPanel">
-        <button type="button" className="iconButton" onClick={onClose} aria-label="关闭">
+        <button type="button" className="iconButton" onClick={onClose} aria-label={t('settings.close', '关闭')}>
           <X size={18} />
         </button>
         <video src={url} controls playsInline />
         <figcaption>
-          <span>视频结果</span>
+          <span>{t('canvas.videoResult', '视频结果')}</span>
           <a href={url} download={downloadName}>
             <Download size={16} />
-            下载
+            {t('canvas.download', '下载')}
           </a>
         </figcaption>
       </figure>
@@ -2522,12 +2946,12 @@ function VideoLightbox({ url, index = 0, downloadMeta, onClose }) {
   );
 }
 
-function ResultGrid({ urls, outputFormat = 'png', downloadMeta, onPreview }) {
+function ResultGrid({ urls, outputFormat = 'png', downloadMeta, onPreview, t = (key, fallback) => fallback || key }) {
   if (!urls.length) {
     return (
       <div className="emptyResult">
         <ImageIcon size={32} />
-        <p>生成结果</p>
+        <p>{t('composer.resultTitle', '生成结果')}</p>
       </div>
     );
   }
@@ -2536,7 +2960,7 @@ function ResultGrid({ urls, outputFormat = 'png', downloadMeta, onPreview }) {
       {urls.map((url, index) => (
         <figure key={`${url}-${index}`}>
           <button type="button" className="resultPreviewButton" onClick={() => onPreview(url, index)}>
-            <img src={url} alt={`生成结果 ${index + 1}`} />
+            <img src={url} alt={`${t('lightbox.imageAlt', '生成结果')} ${index + 1}`} />
           </button>
           <a href={url} download={buildStudioDownloadFilename({
             ...(downloadMeta || {}),
@@ -2545,7 +2969,7 @@ function ResultGrid({ urls, outputFormat = 'png', downloadMeta, onPreview }) {
             extension: resultExtension(url, outputFormat)
           })}>
             <Download size={16} />
-            下载
+            {t('canvas.download', '下载')}
           </a>
         </figure>
       ))}
@@ -2553,12 +2977,12 @@ function ResultGrid({ urls, outputFormat = 'png', downloadMeta, onPreview }) {
   );
 }
 
-function VideoResultGrid({ urls, downloadMeta, onPreview }) {
+function VideoResultGrid({ urls, downloadMeta, onPreview, t = (key, fallback) => fallback || key }) {
   if (!urls.length) {
     return (
       <div className="emptyResult">
         <Video size={32} />
-        <p>视频结果</p>
+        <p>{t('canvas.videoResult', '视频结果')}</p>
       </div>
     );
   }
@@ -2576,7 +3000,7 @@ function VideoResultGrid({ urls, downloadMeta, onPreview }) {
             extension: resultVideoExtension(url)
           })}>
             <Download size={16} />
-            下载
+            {t('canvas.download', '下载')}
           </a>
         </figure>
       ))}
@@ -2612,19 +3036,17 @@ function HistoryDetailPanel({ item, onOpenWorkspace, t = (key, fallback) => fall
     return (
       <section className="workspaceEmptyPanel">
         <History size={34} />
-        <h2>选择历史图库</h2>
-        <p>左侧会显示图片和视频生成结果。选中后可以查看结果，也可以回到对应创作区继续调整。</p>
+        <h2>{t('gallery.selectHistory', '选择历史图库')}</h2>
+        <p>{t('gallery.selectHistoryHint', '左侧会显示图片和视频生成结果。选中后可以查看结果，也可以回到对应创作区继续调整。')}</p>
       </section>
     );
   }
 
   const isVideo = item.mode === 'video' || item.kind === 'video';
-  const urls = Array.isArray(item.displayResultUrls) && item.displayResultUrls.length
-    ? item.displayResultUrls
-    : Array.isArray(item.resultUrls)
-      ? item.resultUrls
-      : [];
+  const resultItems = historyResultItems(item);
+  const urls = resultItems.map((result) => result.displayUrl || result.url).filter(Boolean);
   const downloadMeta = downloadMetaFromHistoryItem(item, isVideo);
+  const promptItems = resultItems.length ? resultItems : [{ id: item.id, prompt: item.prompt || item.generationPrompt || '' }];
   const meta = isVideo
     ? [item.model, item.aspectRatio || item.aspect, item.duration ? `${item.duration}s` : '', item.fps ? `${item.fps}fps` : ''].filter(Boolean)
     : [item.model, item.resolutionTier ? (RESOLUTION_TIER_LABELS[item.resolutionTier] || item.resolutionTier) : item.size, item.quality ? QUALITY_LABELS[item.quality] || item.quality : '', item.outputFormat ? OUTPUT_FORMAT_LABELS[item.outputFormat] || item.outputFormat : ''].filter(Boolean);
@@ -2633,76 +3055,92 @@ function HistoryDetailPanel({ item, onOpenWorkspace, t = (key, fallback) => fall
     <section className="historyWorkspacePanel">
       <div className="historyWorkspaceHero">
         <div>
-          <span>{isVideo ? '视频任务' : '图片任务'} · {formatHistoryTime(item.createdAt)}</span>
-          <h2>{isVideo ? '视频生成' : item.case?.title || '图片生成'}</h2>
+          <span>{isVideo ? t('gallery.videoTask', '视频任务') : t('gallery.imageTask', '图片任务')} · {formatHistoryTime(item.createdAt)}</span>
+          <h2>{isVideo ? t('rail.videoGeneration', '视频生成') : item.case?.title || t('gallery.imageGeneration', '图片生成')}</h2>
           <div className="historyPromptSection">
-            <PromptSectionList prompt={item.generationPrompt || item.prompt} t={t} />
+            {promptItems.slice(0, 6).map((result, index) => (
+              <article className="historyPromptItem" key={result.id || `${result.displayUrl || result.url || 'prompt'}-${index}`}>
+                <strong>#{index + 1}</strong>
+                <PromptSectionList prompt={result.generationPrompt || result.prompt || item.generationPrompt || item.prompt} t={t} />
+              </article>
+            ))}
           </div>
-          <em>{meta.join(' · ') || '参数以历史图库记录为准'}</em>
+          <em>{meta.join(' · ') || t('gallery.historyMetaFallback', '参数以历史图库记录为准')}</em>
         </div>
         <button type="button" className="primaryAction" onClick={() => onOpenWorkspace(isVideo ? 'video' : 'image')}>
           {isVideo ? <Video size={17} /> : <ImageIcon size={17} />}
-          打开{isVideo ? '视频创作' : '图片创作'}
+          {isVideo ? t('gallery.openVideoCreate', '打开视频创作') : t('gallery.openImageCreate', '打开图片创作')}
         </button>
       </div>
       {isVideo ? (
-        <VideoResultGrid urls={urls} downloadMeta={downloadMeta} onPreview={() => {}} />
+        <VideoResultGrid urls={urls} downloadMeta={downloadMeta} onPreview={() => {}} t={t} />
       ) : (
-        <ResultGrid urls={urls} outputFormat={item.outputFormat || 'png'} downloadMeta={downloadMeta} onPreview={() => {}} />
+        <ResultGrid urls={urls} outputFormat={item.outputFormat || 'png'} downloadMeta={downloadMeta} onPreview={() => {}} t={t} />
       )}
     </section>
   );
 }
 
-function PromptSuggestion({ suggestion, onMerge, onReplace, onCopy, onUse }) {
+function PromptSuggestion({ suggestion, onMerge, onReplace, onCopy, onUse, t = (key, fallback) => fallback || key }) {
   if (!suggestion) return null;
   const rows = [
-    ['保留主体', suggestion.subject],
-    ['场景变化', suggestion.scene],
-    ['构图方向', suggestion.composition],
-    ['风格语气', suggestion.style],
-    ['光线色彩', suggestion.lighting],
-    ['补充细节', suggestion.details],
-    ['文字规则', suggestion.textRules],
-    ['避免事项', suggestion.constraints]
+    [t('suggestion.subject', '保留主体'), suggestion.subject],
+    [t('suggestion.scene', '场景变化'), suggestion.scene],
+    [t('suggestion.composition', '构图方向'), suggestion.composition],
+    [t('suggestion.style', '风格语气'), suggestion.style],
+    [t('suggestion.lighting', '光线色彩'), suggestion.lighting],
+    [t('suggestion.details', '补充细节'), suggestion.details],
+    [t('suggestion.textRules', '文字规则'), suggestion.textRules],
+    [t('suggestion.constraints', '避免事项'), suggestion.constraints]
   ].filter(([, value]) => String(value || '').trim());
   const finalPrompt = suggestion.finalPrompt || suggestion.raw || '';
+  const finalSections = promptSectionsFromText(finalPrompt, t).slice(0, 4);
+  const fallbackRows = rows.slice(0, 5);
+  const suggestionSections = finalSections.length
+    ? finalSections
+    : fallbackRows.map(([title, body]) => ({ title, body }));
 
   return (
     <div className="promptSuggestion composerMessage assistant">
       <span>AI</span>
       <div className="promptSuggestionBody">
-      <div className="promptSuggestionHead">
-        <div>
-          <strong>本轮提示词建议</strong>
-          <span>AI 只整理方向，不自动覆盖当前输入</span>
+        <div className="promptSuggestionLead">
+          <strong>{t('suggestion.title', '本轮提示词建议')}</strong>
+          <small>{t('suggestion.hint', 'AI 只整理方向，不自动覆盖当前输入')}</small>
         </div>
-        {onUse ? (
-          <button type="button" onClick={onUse}>
-            <Sparkles size={13} />
-            用这版生成
-          </button>
+        {finalSections.length ? (
+          <span className="promptSuggestionFinalLabel">{t('suggestion.finalPrompt', '可执行提示词')}</span>
         ) : null}
-      </div>
-      {rows.length ? (
-        <div className="promptBlocks">
-          {rows.map(([label, value]) => (
-            <div key={label}>
-              <span>{label}</span>
-              <p>{value}</p>
-            </div>
-          ))}
+        {suggestionSections.length ? (
+          <div className="promptSuggestionText">
+            {suggestionSections.map((section, index) => (
+              <p key={`${section.title}-${index}`}>
+                <em>{section.title}</em>
+                <span>{section.body}</span>
+              </p>
+            ))}
+          </div>
+        ) : finalPrompt ? (
+          <p className="promptSuggestionPlain">{finalPrompt}</p>
+        ) : (
+          <div className="promptSuggestionText">
+            {fallbackRows.map(([label, value]) => (
+              <p key={label}>
+                <b>{label}</b>
+                <span>{value}</span>
+              </p>
+            ))}
+          </div>
+        )}
+        <div className="promptSuggestionActions">
+          {onUse ? (
+            <button type="button" onClick={onUse}>
+              <Sparkles size={13} />
+              {t('suggestion.useThis', '用这版生成')}
+            </button>
+          ) : null}
+          <button type="button" onClick={onReplace}>{t('composer.putIntoInput', '放入输入框')}</button>
         </div>
-      ) : null}
-      <label className="finalPromptBox">
-        <span>可执行提示词</span>
-        <p>{finalPrompt}</p>
-      </label>
-      <div className="promptSuggestionActions">
-        <button type="button" onClick={onMerge}>追加到输入</button>
-        <button type="button" onClick={onReplace}>替换输入</button>
-        <button type="button" onClick={onCopy}>复制</button>
-      </div>
       </div>
     </div>
   );
@@ -2806,6 +3244,7 @@ function ProtectedStudioImage({ src, fallbackSrc = '', alt = '', fallback = null
         src={resolvedSrc}
         alt={alt}
         loading="lazy"
+        decoding="async"
         onError={(event) => {
           const candidates = [src, fallbackSrc]
             .map((value) => String(value || '').trim())
@@ -2828,13 +3267,28 @@ function ProtectedHistoryThumb(props) {
   return <ProtectedStudioImage {...props} />;
 }
 
-function CreativeRecipeBar({ recipes, activeId, onApply }) {
+function LazyImage({ src, alt, className = '', onError, ...props }) {
+  return (
+    <img
+      {...props}
+      className={className || undefined}
+      src={src}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+      onError={onError}
+    />
+  );
+}
+
+function CreativeRecipeBar({ recipes, activeId, onApply, t = (key, fallback) => fallback || key }) {
   if (!recipes?.length) return null;
   return (
     <div className="creativeRecipeBar">
       <div className="recipeBarHead">
-        <span>创作配方</span>
-        <em>来自参考项目的场景预设思路，可一键套用到当前参数</em>
+        <span>{t('recipe.title', '创作配方')}</span>
+        <em>{t('recipe.hint', '来自参考项目的场景预设思路，可一键套用到当前参数')}</em>
       </div>
       <div className="recipeScroller">
         {recipes.map((recipe) => (
@@ -2860,7 +3314,8 @@ const MaskEditor = forwardRef(function MaskEditor({
   onExportReady,
   onError,
   onGenerate,
-  generating = false
+  generating = false,
+  t = (key, fallback) => fallback || key
 }, ref) {
   const imageCanvasRef = useRef(null);
   const maskCanvasRef = useRef(null);
@@ -3070,7 +3525,7 @@ const MaskEditor = forwardRef(function MaskEditor({
   const exportMask = () => {
     const file = exportMaskFile();
     if (!file) {
-      onError?.('请先上传参考图并绘制 mask。');
+      onError?.(t('mask.needImage', '请先上传参考图并绘制 mask。'));
       return;
     }
     const url = URL.createObjectURL(file);
@@ -3086,7 +3541,7 @@ const MaskEditor = forwardRef(function MaskEditor({
         <div className="maskToolGroup">
           <label className="uploadMaskSource">
             <Upload size={15} />
-            <span>{imageFile ? '替换参考图' : '上传参考图'}</span>
+            <span>{imageFile ? t('mask.replaceReference', '替换参考图') : t('mask.uploadReference', '上传参考图')}</span>
             <input
               type="file"
               accept="image/png,image/jpeg,image/webp"
@@ -3099,56 +3554,56 @@ const MaskEditor = forwardRef(function MaskEditor({
           {imageFile ? (
             <button type="button" onClick={onClearImage}>
               <Trash2 size={15} />
-              清除
+              {t('settings.clear', '清除')}
             </button>
           ) : null}
         </div>
         <div className="maskToolGroup">
           <button type="button" className={maskState.tool === 'brush' ? 'active' : ''} onClick={() => updateMaskState({ tool: 'brush' })}>
             <Brush size={15} />
-            涂抹
+            {t('mask.brush', '涂抹')}
           </button>
           <button type="button" className={maskState.tool === 'eraser' ? 'active' : ''} onClick={() => updateMaskState({ tool: 'eraser' })}>
             <Eraser size={15} />
-            橡皮
+            {t('mask.eraser', '橡皮')}
           </button>
         </div>
         <label className="maskRange">
-          <span>笔刷 {maskState.brushSize}px</span>
+          <span>{t('mask.brushSize', '笔刷 {value}px', { value: maskState.brushSize })}</span>
           <input type="range" min="6" max="220" value={maskState.brushSize} onChange={(event) => updateMaskState({ brushSize: Number(event.target.value) })} />
         </label>
         <label className="maskRange">
-          <span>预览 {maskState.overlayAlpha}%</span>
+          <span>{t('mask.previewAlpha', '预览 {value}%', { value: maskState.overlayAlpha })}</span>
           <input type="range" min="15" max="90" value={maskState.overlayAlpha} onChange={(event) => updateMaskState({ overlayAlpha: Number(event.target.value) })} />
         </label>
         <label className="maskRange">
-          <span>画布 {Math.round(maskState.zoom * 100)}%</span>
+          <span>{t('mask.canvasZoom', '画布 {value}%', { value: Math.round(maskState.zoom * 100) })}</span>
           <input type="range" min="20" max="140" value={Math.round(maskState.zoom * 100)} onChange={(event) => updateMaskState({ zoom: clamp(Number(event.target.value) / 100, 0.2, 1.4) })} />
         </label>
         <div className="maskToolGroup">
-          <button type="button" onClick={undo} disabled={!canUndo} aria-label="撤销 mask">
+          <button type="button" onClick={undo} disabled={!canUndo} aria-label={t('mask.undo', '撤销 mask')}>
             <Undo2 size={15} />
           </button>
-          <button type="button" onClick={redo} disabled={!canRedo} aria-label="重做 mask">
+          <button type="button" onClick={redo} disabled={!canRedo} aria-label={t('mask.redo', '重做 mask')}>
             <Redo2 size={15} />
           </button>
           <button type="button" onClick={invertMask} disabled={!imageFile}>
             <FlipHorizontal size={15} />
-            反转
+            {t('mask.invert', '反转')}
           </button>
           <button type="button" onClick={clearMask} disabled={!imageFile}>
-            清空
+            {t('gallery.clear', '清空')}
           </button>
         </div>
         <div className="maskToolGroup maskExportGroup">
           <button type="button" onClick={exportMask} disabled={!imageFile}>
             <Download size={15} />
-            导出 mask
+            {t('mask.export', '导出 mask')}
           </button>
           {onGenerate ? (
             <button type="button" className="maskGenerateButton" onClick={onGenerate} disabled={!imageFile || generating}>
               {generating ? <LoaderCircle className="spin" size={15} /> : <Sparkles size={15} />}
-              用这个生成
+              {t('mask.generateWithMask', '用这个生成')}
             </button>
           ) : null}
         </div>
@@ -3171,14 +3626,14 @@ const MaskEditor = forwardRef(function MaskEditor({
         ) : (
           <div className="maskCanvasEmpty">
             <ScanLine size={30} />
-            <strong>上传一张参考图开始制作 mask</strong>
-            <span>涂抹区域会在生成时被重绘，未涂区域会保留。</span>
+            <strong>{t('mask.emptyTitle', '上传一张参考图开始制作 mask')}</strong>
+            <span>{t('mask.emptyHint', '涂抹区域会在生成时被重绘，未涂区域会保留。')}</span>
           </div>
         )}
       </div>
       <div className="maskMetaLine">
-        <span>{imageFile ? `${maskState.imageName} · ${maskState.imageSize.width}×${maskState.imageSize.height}` : 'Mask 尺寸会自动匹配当前参考图'}</span>
-        <span>透明区 = 要重绘</span>
+        <span>{imageFile ? `${maskState.imageName} · ${maskState.imageSize.width}×${maskState.imageSize.height}` : t('mask.sizeAuto', 'Mask 尺寸会自动匹配当前参考图')}</span>
+        <span>{t('mask.transparentMeansRedraw', '透明区 = 要重绘')}</span>
       </div>
     </div>
   );
@@ -3202,6 +3657,8 @@ function CreationDesk({
   onProfileRefresh,
   onHistoryAdd,
   remoteSession,
+  remoteSessionReady,
+  persistenceKey,
   onSessionSnapshot,
   promptPresets,
   appendTemplateRequest,
@@ -3212,43 +3669,48 @@ function CreationDesk({
 }) {
   const draftRef = useRef(loadDraft());
   const currentSessionRef = useRef(loadCurrentSession());
+  const restoredSession = currentSessionRef.current;
+  const initialParameters = restoredSession?.parameters || draftRef.current || {};
+  const restoredMode = restoredSession?.mode || (activeWorkspace === 'video' ? 'video' : 'image');
   const generationRef = useRef({ id: 0, controller: null });
   const resolvingCaseRef = useRef({ id: 0 });
   const appliedCasePromptRef = useRef({ key: '', prompt: '' });
   const maskEditorRef = useRef(null);
   const composerThreadRef = useRef(null);
-  const [mode, setMode] = useState(activeWorkspace === 'video' ? 'video' : 'image');
-  const [prompt, setPrompt] = useState(() => draftRef.current?.prompt || selectedCase?.prompt || '');
-  const [model, setModel] = useState(() => draftRef.current?.model || IMAGE_MODELS[0]);
-  const initialSize = normalizeSize(draftRef.current?.size || '1024x1024');
-  const [aspect, setAspect] = useState(() => normalizeAspect(draftRef.current?.aspect || draftRef.current?.aspectRatio, initialSize));
-  const [customSize, setCustomSize] = useState(() => normalizeSize(draftRef.current?.customSize || initialSize));
-  const [quality, setQuality] = useState(() => normalizeQuality(draftRef.current?.quality));
-  const [resolutionTier, setResolutionTier] = useState(() => normalizeResolutionTier(draftRef.current?.resolutionTier));
-  const [outputFormat, setOutputFormat] = useState(() => normalizeOutputFormat(draftRef.current?.outputFormat));
-  const [moderation, setModeration] = useState(() => normalizeModeration(draftRef.current?.moderation));
-  const [count, setCount] = useState(() => draftRef.current?.count || 1);
-  const [videoModel, setVideoModel] = useState(() => draftRef.current?.videoModel || VIDEO_MODELS[0]);
-  const [videoAspect, setVideoAspect] = useState(() => normalizeVideoAspect(draftRef.current?.videoAspect || draftRef.current?.videoAspectRatio));
-  const [videoDuration, setVideoDuration] = useState(() => normalizeVideoDuration(draftRef.current?.videoDuration || draftRef.current?.duration));
-  const [videoFps, setVideoFps] = useState(() => normalizeVideoFps(draftRef.current?.videoFps || draftRef.current?.fps));
-  const [videoMotion, setVideoMotion] = useState(() => normalizeVideoMotion(draftRef.current?.videoMotion));
-  const [videoStyle, setVideoStyle] = useState(() => normalizeVideoStyle(draftRef.current?.videoStyle));
-  const [videoQuality, setVideoQuality] = useState(() => normalizeVideoQuality(draftRef.current?.videoQuality));
-  const [negativePrompt, setNegativePrompt] = useState(() => draftRef.current?.negativePrompt || '');
+  const lastSessionSnapshotPayloadRef = useRef('');
+  const [mode, setMode] = useState(restoredMode);
+  const [prompt, setPrompt] = useState(() => restoredSession?.prompt || draftRef.current?.prompt || selectedCase?.prompt || '');
+  const [model, setModel] = useState(() => restoredSession?.model || initialParameters.model || IMAGE_MODELS[0]);
+  const initialSize = normalizeSize(initialParameters.size || initialParameters.customSize || '1024x1024');
+  const [aspect, setAspect] = useState(() => normalizeAspect(initialParameters.aspect || initialParameters.aspectRatio, initialSize));
+  const [customSize, setCustomSize] = useState(() => normalizeSize(initialParameters.customSize || initialSize));
+  const [quality, setQuality] = useState(() => normalizeQuality(initialParameters.quality));
+  const [resolutionTier, setResolutionTier] = useState(() => normalizeResolutionTier(initialParameters.resolutionTier));
+  const [outputFormat, setOutputFormat] = useState(() => normalizeOutputFormat(initialParameters.outputFormat));
+  const [moderation, setModeration] = useState(() => normalizeModeration(initialParameters.moderation));
+  const [count, setCount] = useState(() => initialParameters.count || 1);
+  const [videoModel, setVideoModel] = useState(() => initialParameters.videoModel || (restoredMode === 'video' ? restoredSession?.model : '') || VIDEO_MODELS[0]);
+  const [videoAspect, setVideoAspect] = useState(() => normalizeVideoAspect(initialParameters.videoAspect || initialParameters.videoAspectRatio));
+  const [videoDuration, setVideoDuration] = useState(() => normalizeVideoDuration(initialParameters.videoDuration || initialParameters.duration));
+  const [videoFps, setVideoFps] = useState(() => normalizeVideoFps(initialParameters.videoFps || initialParameters.fps));
+  const [videoMotion, setVideoMotion] = useState(() => normalizeVideoMotion(initialParameters.videoMotion));
+  const [videoStyle, setVideoStyle] = useState(() => normalizeVideoStyle(initialParameters.videoStyle));
+  const [videoQuality, setVideoQuality] = useState(() => normalizeVideoQuality(initialParameters.videoQuality));
+  const [negativePrompt, setNegativePrompt] = useState(() => initialParameters.negativePrompt || '');
   const [videoReferenceFiles, setVideoReferenceFiles] = useState([]);
   const [videoReferencePreviews, setVideoReferencePreviews] = useState([]);
-  const restoredSession = currentSessionRef.current;
   const restoredWasGenerating = restoredSession?.status === 'loading';
+  const restoredHasServerJob = hasRestorableServerGeneration(restoredSession);
   const restoredPendingReview = restoredWasGenerating && (
     (Array.isArray(restoredSession?.results) && restoredSession.results.length)
     || (Array.isArray(restoredSession?.videoResults) && restoredSession.videoResults.length)
     || (Array.isArray(restoredSession?.canvasNodes) && restoredSession.canvasNodes.length)
   );
-  const restoredMode = restoredSession?.mode || (activeWorkspace === 'video' ? 'video' : 'image');
-  const [status, setStatus] = useState(restoredWasGenerating ? 'error' : 'idle');
+  const [status, setStatus] = useState(restoredWasGenerating ? restoredHasServerJob ? 'loading' : 'error' : 'idle');
   const [message, setMessage] = useState(restoredWasGenerating
-    ? restoredPendingReview
+    ? restoredHasServerJob
+      ? '检测到服务端仍有生成任务，正在继续同步状态；刷新页面不会丢失队列。'
+      : restoredPendingReview
       ? '页面刷新前有生成请求正在进行，已保留收到的预览/画布。上游可能仍已扣费，请先检查结果或等待，不要立刻重复提交。'
       : '页面刷新前有生成请求正在进行，但本页已断开监听。上游可能仍已扣费，请先到历史图库或服务端确认，再决定是否重试。'
     : '');
@@ -3259,13 +3721,21 @@ function CreationDesk({
   const [previewImage, setPreviewImage] = useState(null);
   const [previewVideo, setPreviewVideo] = useState('');
   const [progress, setProgress] = useState(() => restoredWasGenerating
-    ? { ...(restoredSession?.progress || {}), stage: restoredPendingReview ? 'pending_review' : 'failed', percent: restoredSession?.progress?.percent || 0 }
+    ? {
+      ...(restoredSession?.progress || {}),
+      stage: restoredHasServerJob ? (restoredSession?.progress?.stage || 'upstream') : restoredPendingReview ? 'pending_review' : 'failed',
+      percent: restoredSession?.progress?.percent || (restoredHasServerJob ? 52 : 0)
+    }
     : { stage: 'idle', percent: 0, completed: 0, total: 1 });
   const [timing, setTiming] = useState(() => restoredSession?.timing || null);
   const [copied, setCopied] = useState(false);
   const [promptInstruction, setPromptInstruction] = useState('');
-  const [promptSuggestion, setPromptSuggestion] = useState(null);
-  const [assistantMessages, setAssistantMessages] = useState([]);
+  const [promptSuggestion, setPromptSuggestion] = useState(() => serializePromptSuggestion(restoredSession?.promptSuggestion));
+  const [assistantMessages, setAssistantMessages] = useState(() => (
+    Array.isArray(restoredSession?.assistantMessages)
+      ? restoredSession.assistantMessages.map(serializeAssistantMessage).filter(Boolean).slice(-24)
+      : []
+  ));
   const [activeRecipeId, setActiveRecipeId] = useState('');
   const [composerInspirationOpen, setComposerInspirationOpen] = useState(false);
   const [optimizingPrompt, setOptimizingPrompt] = useState(false);
@@ -3278,7 +3748,9 @@ function CreationDesk({
   const [layoutSections, setLayoutSections] = useState(() => loadWorkbenchLayout());
   const [activeParamPanel, setActiveParamPanel] = useState('');
   const [canvasView, setCanvasView] = useState(() => restoredSession?.canvasView || { x: 0, y: 0, zoom: 1 });
+  const [canvasViewport, setCanvasViewport] = useState({ width: 1200, height: 720 });
   const [canvasNodes, setCanvasNodes] = useState(() => Array.isArray(restoredSession?.canvasNodes) ? restoredSession.canvasNodes : []);
+  const canvasNodesRef = useRef(Array.isArray(restoredSession?.canvasNodes) ? restoredSession.canvasNodes : []);
   const [canvasCustomLinks, setCanvasCustomLinks] = useState(() => Array.isArray(restoredSession?.canvasCustomLinks) ? restoredSession.canvasCustomLinks : []);
   const [selectedCanvasNodeId, setSelectedCanvasNodeId] = useState(() => restoredSession?.selectedCanvasNodeId || '');
   const [canvasLinkDraft, setCanvasLinkDraft] = useState(null);
@@ -3287,13 +3759,16 @@ function CreationDesk({
   const [canvasEditorMode, setCanvasEditorMode] = useState('image');
   const [pendingCanvasGenerate, setPendingCanvasGenerate] = useState(null);
   const [pendingSuggestionGenerate, setPendingSuggestionGenerate] = useState(null);
-  const [generationQueue, setGenerationQueue] = useState([]);
+  const [generationQueue, setGenerationQueue] = useState(() => Array.isArray(restoredSession?.generationQueue) ? restoredSession.generationQueue : []);
+  const workPreviewRef = useRef(null);
   const canvasDragRef = useRef(null);
   const suppressCanvasClickRef = useRef(false);
   const appliedRemoteSessionRef = useRef('');
-  const generationQueueRef = useRef([]);
+  const generationQueueRef = useRef(Array.isArray(restoredSession?.generationQueue) ? restoredSession.generationQueue : []);
   const generationQueueRunnerRef = useRef(false);
+  const restoredQueueStartedRef = useRef(false);
   const recoveredJobIdsRef = useRef(new Set());
+  const stateBlobUrlsRef = useRef(new Set());
   const updateLayoutSections = (patch) => {
     setLayoutSections((current) => {
       const next = { ...current, ...patch };
@@ -3301,21 +3776,73 @@ function CreationDesk({
       return next;
     });
   };
+
+  useEffect(() => {
+    canvasNodesRef.current = canvasNodes;
+  }, [canvasNodes]);
+
+  useEffect(() => {
+    const nextUrls = collectStateBlobUrls({
+      results,
+      videoResults,
+      canvasNodes,
+      previewImage,
+      previewVideo
+    });
+    for (const url of stateBlobUrlsRef.current) {
+      if (!nextUrls.has(url)) URL.revokeObjectURL(url);
+    }
+    stateBlobUrlsRef.current = nextUrls;
+  }, [results, videoResults, canvasNodes, previewImage?.url, previewVideo?.url, previewVideo]);
+
+  useEffect(() => () => {
+    for (const url of stateBlobUrlsRef.current) URL.revokeObjectURL(url);
+    stateBlobUrlsRef.current.clear();
+  }, []);
+
   const isReady = connectionReady(providerSettings, apiKey, isAuthenticated);
+  const currentImageProvider = getImageProvider(providerSettings.providerId, providerSettings.apiKeySource);
+  const imageAspectOptions = useMemo(() => providerAspectOptions(currentImageProvider), [currentImageProvider]);
+  const customSizeOptions = useMemo(() => providerCustomSizeOptions(currentImageProvider), [currentImageProvider]);
+  const imageQualityOptions = useMemo(() => (
+    providerParameterList(currentImageProvider, 'qualities', QUALITY).filter((item) => item !== 'auto')
+  ), [currentImageProvider]);
+  const imageResolutionTierOptions = useMemo(() => (
+    providerParameterList(currentImageProvider, 'resolutionTiers', RESOLUTION_TIERS.map((item) => item.value))
+      .map((value) => RESOLUTION_TIERS.find((item) => item.value === value) || { value, label: String(value).toUpperCase() })
+  ), [currentImageProvider]);
+  const imageOutputFormatOptions = useMemo(() => providerParameterList(currentImageProvider, 'outputFormats', OUTPUT_FORMATS), [currentImageProvider]);
+  const imageCountRange = useMemo(() => providerCountRange(currentImageProvider), [currentImageProvider]);
   const defaultImageModelOptions = IMAGE_MODELS.map((id) => ({ id, label: id }));
-  const imageModelOptions = modelOptions?.image?.length ? modelOptions.image : defaultImageModelOptions;
+  const configuredImageModelOptions = [
+    providerSettings.imageGenerationModel,
+    providerSettings.imageEditModel
+  ].map((id) => String(id || '').trim()).filter(Boolean).map((id) => ({ id, label: id }));
+  const baseImageModelOptions = modelOptions?.image?.length ? modelOptions.image : defaultImageModelOptions;
+  const imageModelOptions = [
+    ...configuredImageModelOptions.filter((item) => !baseImageModelOptions.some((option) => option.id === item.id)),
+    ...baseImageModelOptions
+  ];
   const assistantModelOptions = modelOptions?.responses?.length
     ? modelOptions.responses.filter((item) => !modelLooksLikeImage(item) && !PROMPT_ASSISTANT_MODEL_EXCLUDE_PATTERN.test(`${item.id} ${item.label || ''}`))
     : [];
   const responseModelOptions = assistantModelOptions.length
     ? assistantModelOptions
     : [...new Set([providerSettings.responsesModel, ...RESPONSE_MODELS])].filter(Boolean).map((id) => ({ id, label: id }));
-  const videoModelOptions = modelOptions?.video?.length ? modelOptions.video : VIDEO_MODELS.map((id) => ({ id, label: id }));
+  const configuredVideoModel = String(providerSettings.videoModel || '').trim();
+  const baseVideoModelOptions = modelOptions?.video?.length ? modelOptions.video : VIDEO_MODELS.map((id) => ({ id, label: id }));
+  const syncedVideoModelOptions = configuredVideoModel && !baseVideoModelOptions.some((item) => item.id === configuredVideoModel)
+    ? [{ id: configuredVideoModel, label: configuredVideoModel }, ...baseVideoModelOptions]
+    : baseVideoModelOptions;
+  const videoModelOptions = videoModel && !syncedVideoModelOptions.some((item) => item.id === videoModel)
+    ? [{ id: videoModel, label: videoModel }, ...syncedVideoModelOptions]
+    : syncedVideoModelOptions;
   const activeModelInfo = imageModelOptions.find((item) => item.id === model);
   const activeVideoModelInfo = videoModelOptions.find((item) => item.id === videoModel);
-  const hasVideoModels = videoModelOptions.length > 0;
+  const hasSyncedVideoModels = syncedVideoModelOptions.length > 0;
+  const hasVideoModels = hasSyncedVideoModels || Boolean(videoModel);
   const size = sizeFromAspect(aspect, customSize);
-  const countValue = normalizeCount(count);
+  const countValue = clampCountForProvider(count, currentImageProvider);
   const videoSize = videoSizeFromAspect(videoAspect);
   const currentDownloadMeta = resultBatchMeta || {
     mode: mode === 'video' ? 'video' : 'image',
@@ -3333,8 +3860,6 @@ function CreationDesk({
   const visiblePromptPresets = (promptPresets || PROMPT_PRESETS).filter((item) => item.mode === mode);
   const referenceFiles = referenceItems.map((item) => item.file);
   const isImageEditMode = mode === 'edit' || mode === 'mask';
-  const queuedGenerationCount = generationQueue.filter((item) => item.status === 'queued').length;
-  const runningQueueItem = generationQueue.find((item) => item.status === 'running') || null;
   const selectedCanvasNode = canvasNodes.find((node) => node.id === selectedCanvasNodeId) || null;
   const canvasNodeMap = useMemo(() => new Map(canvasNodes.map((node) => [node.id, node])), [canvasNodes]);
   const deskModeLabel = (value) => {
@@ -3356,6 +3881,44 @@ function CreationDesk({
   const videoStyleLabel = (item) => (item.value === 'auto' ? t('params.auto', '自动') : item.label);
   const resolutionTierLabel = (item) => RESOLUTION_TIER_LABELS[item.value] || item.label;
   const imageCountSuffix = t('params.imageCountSuffix', '张');
+  useEffect(() => {
+    if (mode === 'video') return;
+    if (count !== countValue) setCount(countValue);
+    if (imageQualityOptions.length && !imageQualityOptions.includes(quality)) {
+      setQuality(imageQualityOptions.includes('medium') ? 'medium' : imageQualityOptions[0]);
+    }
+    if (imageOutputFormatOptions.length && !imageOutputFormatOptions.includes(outputFormat)) {
+      setOutputFormat(imageOutputFormatOptions.includes('png') ? 'png' : imageOutputFormatOptions[0]);
+    }
+    if (imageResolutionTierOptions.length && !imageResolutionTierOptions.some((item) => item.value === resolutionTier)) {
+      setResolutionTier(imageResolutionTierOptions[0].value);
+    }
+    if (aspect !== 'custom' && !imageAspectOptions.some((item) => item.value === aspect)) {
+      const nextAspect = imageAspectOptions.find((item) => item.value !== 'custom') || imageAspectOptions[0];
+      if (nextAspect) {
+        setAspect(nextAspect.value);
+        if (nextAspect.value !== 'custom') setCustomSize(nextAspect.size);
+      }
+    }
+    if (aspect === 'custom' && customSizeOptions.length && !customSizeOptions.some((item) => item.value === customSize)) {
+      setCustomSize(customSizeOptions[0].value);
+    }
+  }, [
+    mode,
+    count,
+    countValue,
+    quality,
+    outputFormat,
+    resolutionTier,
+    aspect,
+    customSize,
+    imageQualityOptions,
+    imageOutputFormatOptions,
+    imageResolutionTierOptions,
+    imageAspectOptions,
+    customSizeOptions
+  ]);
+
   const canvasEdges = useMemo(() => {
     const edges = [];
     const seen = new Set();
@@ -3422,6 +3985,54 @@ function CreationDesk({
         .flatMap((edge) => [edge.from.id, edge.to.id])
     ]);
   }, [canvasEdges, canvasLinkDraft?.fromId]);
+  const canvasPerformanceMode = canvasNodes.length >= CANVAS_PERFORMANCE_NODE_THRESHOLD || canvasEdges.length >= CANVAS_PERFORMANCE_EDGE_THRESHOLD;
+  const visibleCanvasNodeIds = useMemo(() => {
+    const zoom = canvasView.zoom || 1;
+    const margin = CANVAS_VIRTUALIZATION_MARGIN;
+    const viewportWidth = Math.max(1, canvasViewport.width || 1);
+    const viewportHeight = Math.max(1, canvasViewport.height || 1);
+    const ids = new Set();
+    for (const node of canvasNodes) {
+      if (!node?.id) continue;
+      const screenLeft = viewportWidth / 2 + canvasView.x + Number(node.x || 0) * zoom;
+      const screenTop = viewportHeight / 2 + canvasView.y + Number(node.y || 0) * zoom;
+      const screenRight = screenLeft + nodeWidth(node) * zoom;
+      const screenBottom = screenTop + nodeHeight(node) * zoom;
+      const nearViewport = screenRight >= -margin
+        && screenLeft <= viewportWidth + margin
+        && screenBottom >= -margin
+        && screenTop <= viewportHeight + margin;
+      if (
+        nearViewport
+        || node.id === selectedCanvasNodeId
+        || node.id === canvasEditorNodeId
+        || linkedNodeIds.has(node.id)
+      ) {
+        ids.add(node.id);
+      }
+    }
+    return ids;
+  }, [
+    canvasNodes,
+    canvasView.x,
+    canvasView.y,
+    canvasView.zoom,
+    canvasViewport.width,
+    canvasViewport.height,
+    selectedCanvasNodeId,
+    canvasEditorNodeId,
+    linkedNodeIds
+  ]);
+  const renderedCanvasEdges = useMemo(() => {
+    if (!canvasPerformanceMode) return canvasEdges;
+    return canvasEdges.filter((edge) => {
+      const directlySelected = Boolean(selectedCanvasNodeId)
+        && (edge.from.id === selectedCanvasNodeId || edge.to.id === selectedCanvasNodeId);
+      return directlySelected
+        || visibleCanvasNodeIds.has(edge.from.id)
+        || visibleCanvasNodeIds.has(edge.to.id);
+    });
+  }, [canvasEdges, canvasPerformanceMode, visibleCanvasNodeIds, selectedCanvasNodeId, childNodeIds, parentNodeIds]);
   function canvasPlanePointFromEvent(event) {
     const eventTarget = event.currentTarget || event.target;
     const rect = eventTarget?.closest?.('.infiniteCanvas')?.getBoundingClientRect();
@@ -3452,7 +4063,7 @@ function CreationDesk({
     };
     if (reachesFromTarget(toId)) {
       setStatus('error');
-      setMessage('这条关联会形成循环，请换一个方向连接。');
+      setMessage(t('statusMessages.linkCycle', '这条关联会形成循环，请换一个方向连接。'));
       window.setTimeout(() => setStatus('idle'), 1600);
       return false;
     }
@@ -3467,7 +4078,7 @@ function CreationDesk({
     ]);
     setSelectedCanvasNodeId(toId);
     setStatus('success');
-    setMessage('已建立画布关联。');
+    setMessage(t('statusMessages.linkCreated', '已建立画布关联。'));
     window.setTimeout(() => setStatus('idle'), 1200);
     return true;
   }
@@ -3589,58 +4200,104 @@ function CreationDesk({
     setResultBatchMeta(sessionSnapshot.resultBatchMeta || null);
     setCanvasNodes(Array.isArray(sessionSnapshot.canvasNodes) ? sessionSnapshot.canvasNodes : []);
     setCanvasCustomLinks(Array.isArray(sessionSnapshot.canvasCustomLinks) ? sessionSnapshot.canvasCustomLinks : []);
+    const nextGenerationQueue = Array.isArray(sessionSnapshot.generationQueue)
+      ? sessionSnapshot.generationQueue.map(serializeGenerationQueueItem).filter(Boolean).slice(-GENERATION_QUEUE_LIMIT)
+      : [];
+    generationQueueRef.current = nextGenerationQueue;
+    setGenerationQueue(nextGenerationQueue);
     setSelectedCanvasNodeId(sessionSnapshot.selectedCanvasNodeId || '');
     setCanvasEditorNodeId(sessionSnapshot.canvasEditorNodeId || '');
     setCanvasLinkDraft(null);
     setCanvasView(sessionSnapshot.canvasView || { x: 0, y: 0, zoom: 1 });
-    setStatus(sessionSnapshot.status === 'loading' ? 'error' : (sessionSnapshot.status || 'idle'));
+    setAssistantMessages(Array.isArray(sessionSnapshot.assistantMessages)
+      ? sessionSnapshot.assistantMessages.map(serializeAssistantMessage).filter(Boolean).slice(-24)
+      : []);
+    setPromptSuggestion(serializePromptSuggestion(sessionSnapshot.promptSuggestion));
+    const hasRestorableServerJob = hasRestorableServerGeneration(sessionSnapshot);
+    setStatus(sessionSnapshot.status === 'loading'
+      ? hasRestorableServerJob ? 'loading' : 'error'
+      : (sessionSnapshot.status || 'idle'));
     const interruptedHasResult = sessionSnapshot.status === 'loading' && (
       (Array.isArray(sessionSnapshot.results) && sessionSnapshot.results.length)
       || (Array.isArray(sessionSnapshot.videoResults) && sessionSnapshot.videoResults.length)
       || (Array.isArray(sessionSnapshot.canvasNodes) && sessionSnapshot.canvasNodes.length)
     );
     setMessage(sessionSnapshot.status === 'loading'
-      ? interruptedHasResult
+      ? hasRestorableServerJob
+        ? '检测到服务端仍有生成任务，正在继续同步状态；刷新页面不会丢失队列。'
+        : interruptedHasResult
         ? '页面刷新前有生成请求正在进行，已保留收到的预览/画布。上游可能仍已扣费，请先检查结果或等待，不要立刻重复提交。'
         : '页面刷新前有生成请求正在进行，但本页已断开监听。上游可能仍已扣费，请先到历史图库或服务端确认，再决定是否重试。'
       : (sessionSnapshot.message || ''));
     setProgress(sessionSnapshot.status === 'loading'
-      ? { ...(sessionSnapshot.progress || {}), stage: interruptedHasResult ? 'pending_review' : 'failed', percent: sessionSnapshot.progress?.percent || 0 }
+      ? {
+        ...(sessionSnapshot.progress || {}),
+        stage: hasRestorableServerJob ? (sessionSnapshot.progress?.stage || 'upstream') : interruptedHasResult ? 'pending_review' : 'failed',
+        percent: sessionSnapshot.progress?.percent || (hasRestorableServerJob ? 52 : 0)
+      }
       : (sessionSnapshot.progress || { stage: 'idle', percent: 0, completed: 0, total: 1 }));
     setTiming(sessionSnapshot.timing || null);
   }
 
   useEffect(() => {
-    if (!remoteSession?.updatedAt) return;
-    if (appliedRemoteSessionRef.current === remoteSession.updatedAt) return;
+    if (!remoteSession) return;
+    const remoteSessionMarker = remoteSession.updatedAt || sessionSnapshotComparePayload(remoteSession);
+    if (!remoteSessionMarker) return;
+    if (appliedRemoteSessionRef.current === remoteSessionMarker) return;
     const remoteUpdated = Date.parse(remoteSession.updatedAt) || 0;
     const localUpdated = Date.parse(currentSessionRef.current?.updatedAt || '') || 0;
     if (localUpdated && localUpdated > remoteUpdated && canvasNodes.length) return;
-    appliedRemoteSessionRef.current = remoteSession.updatedAt;
+    appliedRemoteSessionRef.current = remoteSessionMarker;
     currentSessionRef.current = remoteSession;
     applySessionSnapshot(remoteSession);
-  }, [remoteSession?.updatedAt]);
+  }, [remoteSession]);
+
+  useEffect(() => {
+    const element = workPreviewRef.current;
+    if (!element) return undefined;
+    const updateViewport = () => {
+      const rect = element.getBoundingClientRect();
+      setCanvasViewport((current) => {
+        const width = Math.round(rect.width || current.width || 1200);
+        const height = Math.round(rect.height || current.height || 720);
+        if (current.width === width && current.height === height) return current;
+        return { width, height };
+      });
+    };
+    updateViewport();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateViewport);
+      return () => window.removeEventListener('resize', updateViewport);
+    }
+    const observer = new ResizeObserver(updateViewport);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const protectedAssetUrl = (node) => {
       const url = String(node?.url || '');
       const persistedUrl = String(node?.persistedUrl || '');
       if (url.startsWith('/studio-api/history/') || url.startsWith('/studio-api/generation-jobs/')) return url;
-      if (url.startsWith('blob:') && (persistedUrl.startsWith('/studio-api/history/') || persistedUrl.startsWith('/studio-api/generation-jobs/'))) return persistedUrl;
       return '';
     };
+    if (canvasPerformanceMode) return;
     const protectedNodes = canvasNodes
       .map((node) => ({ node, assetUrl: protectedAssetUrl(node) }))
-      .filter((item) => item.assetUrl);
+      .filter((item) => item.assetUrl)
+      .slice(0, CANVAS_PROTECTED_ASSET_RESOLVE_LIMIT);
     if (!protectedNodes.length || !isAuthenticated) return;
     let cancelled = false;
     const historyClient = new StudioHistoryClient({ session: loadSession() });
     Promise.all(protectedNodes.map(async ({ node, assetUrl }) => ({
       id: node.id,
       persistedUrl: assetUrl,
-      url: await historyClient.resolveAssetUrl(assetUrl).catch(() => assetUrl)
+      url: await enqueueProtectedImageTask(() => historyClient.resolveAssetUrl(assetUrl)).catch(() => assetUrl)
     }))).then((resolved) => {
-      if (cancelled) return;
+      if (cancelled) {
+        revokeBlobUrls(resolved.map((item) => item.url));
+        return;
+      }
       const resolvedMap = new Map(resolved
         .filter((item) => item.url && !String(item.url).startsWith('/studio-api/'))
         .map((item) => [item.id, item]));
@@ -3654,7 +4311,7 @@ function CreationDesk({
     return () => {
       cancelled = true;
     };
-  }, [canvasNodes, isAuthenticated]);
+  }, [canvasNodes, isAuthenticated, canvasPerformanceMode, visibleCanvasNodeIds]);
 
   useEffect(() => {
     const snapshot = saveCurrentSession({
@@ -3669,6 +4326,7 @@ function CreationDesk({
       resultBatchMeta,
       canvasNodes,
       canvasCustomLinks,
+      generationQueue,
       selectedCanvasNodeId,
       canvasEditorNodeId,
       canvasView,
@@ -3676,6 +4334,8 @@ function CreationDesk({
       message,
       progress,
       timing,
+      assistantMessages: assistantMessages.map(serializeAssistantMessage).filter(Boolean).slice(-24),
+      promptSuggestion: serializePromptSuggestion(promptSuggestion),
       selectedCase: selectedCase ? {
         id: selectedCase.id,
         title: selectedCase.title,
@@ -3690,7 +4350,11 @@ function CreationDesk({
       }
     });
     currentSessionRef.current = snapshot;
-    onSessionSnapshot?.(snapshot);
+    const encodedSnapshot = sessionSnapshotComparePayload(snapshot);
+    if (lastSessionSnapshotPayloadRef.current !== encodedSnapshot) {
+      lastSessionSnapshotPayloadRef.current = encodedSnapshot;
+      onSessionSnapshot?.(snapshot);
+    }
   }, [
     sessionId,
     mode,
@@ -3701,6 +4365,7 @@ function CreationDesk({
     resultBatchMeta,
     canvasNodes,
     canvasCustomLinks,
+    generationQueue,
     selectedCanvasNodeId,
     canvasEditorNodeId,
     canvasView,
@@ -3708,6 +4373,9 @@ function CreationDesk({
     message,
     progress,
     timing,
+    assistantMessages,
+    promptSuggestion?.finalPrompt,
+    promptSuggestion?.raw,
     selectedCase?.id,
     aspect,
     customSize,
@@ -3725,6 +4393,18 @@ function CreationDesk({
     videoQuality,
     negativePrompt
   ]);
+
+  useEffect(() => {
+    if (restoredQueueStartedRef.current) return;
+    if (!isReady) return;
+    const hasRestorableQueuedTask = generationQueueRef.current.some((item) => (
+      item.status === 'queued' && item.restored && item.restorable !== false && !item.remote
+    ));
+    if (!hasRestorableQueuedTask) return;
+    restoredQueueStartedRef.current = true;
+    setMessage(t('statusMessages.localQueueRestored', '已恢复刷新前的本地排队任务，正在继续执行。'));
+    runGenerationQueue();
+  }, [isReady]);
 
   useEffect(() => {
     const thread = composerThreadRef.current;
@@ -3768,6 +4448,27 @@ function CreationDesk({
   function resetCanvasView() {
     setCanvasView({ x: 0, y: 0, zoom: 1 });
   }
+
+  useEffect(() => {
+    function handleCanvasZoomShortcut(event) {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.altKey) return;
+      if (event.target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+      if (event.key === '-' || event.key === '_') {
+        event.preventDefault();
+        setCanvasZoom((value) => value - 0.1);
+      } else if (event.key === '=' || event.key === '+') {
+        event.preventDefault();
+        setCanvasZoom((value) => value + 0.1);
+      } else if (event.key === '0') {
+        event.preventDefault();
+        resetCanvasView();
+      }
+    }
+
+    window.addEventListener('keydown', handleCanvasZoomShortcut);
+    return () => window.removeEventListener('keydown', handleCanvasZoomShortcut);
+  }, []);
 
   function startCanvasPan(event) {
     if (event.button !== 0) return;
@@ -3827,7 +4528,7 @@ function CreationDesk({
         setCanvasLinkDraft(null);
       } else {
         setCanvasLinkDraft((current) => current?.fromId === drag.fromId ? { fromId: drag.fromId, point: null } : { fromId: drag.fromId, point: null });
-        setMessage('选择另一张图左侧圆点，或拖到目标图片上建立关联。');
+        setMessage(t('statusMessages.linkTargetHint', '选择另一张图左侧圆点，或拖到目标图片上建立关联。'));
       }
     }
     canvasDragRef.current = null;
@@ -4012,11 +4713,16 @@ function CreationDesk({
   async function attachServerJobResult(historyClient, job, { silent = false } = {}) {
     const persistedUrls = Array.isArray(job?.resultUrls) ? job.resultUrls.filter(Boolean) : [];
     if (!job?.id || !persistedUrls.length || recoveredJobIdsRef.current.has(job.id)) return false;
-    if (canvasNodes.some((node) => node.downloadMeta?.id === job.id || persistedUrls.includes(node.persistedUrl || node.url))) {
+    const currentNodes = Array.isArray(canvasNodesRef.current) ? canvasNodesRef.current : [];
+    if (currentNodes.some((node) => node.downloadMeta?.id === job.id || persistedUrls.includes(node.persistedUrl || node.url))) {
       recoveredJobIdsRef.current.add(job.id);
       return false;
     }
     const displayUrls = await Promise.all(persistedUrls.map((url) => historyClient.resolveAssetUrl(url).catch(() => url)));
+    if (sessionId !== job.sessionId) {
+      revokeBlobUrls(displayUrls);
+      return false;
+    }
     appendCanvasNodes(displayUrls, {
       kind: 'image',
       parentId: job.parentCanvasNodeId || '',
@@ -4042,22 +4748,102 @@ function CreationDesk({
       id: job.id
     });
     recoveredJobIdsRef.current.add(job.id);
+    clearRemoteGenerationJob(job.id, 'done');
     if (!silent) {
       setStatus('success');
       setProgress({ stage: 'completed', percent: 100, completed: displayUrls.length, total: displayUrls.length || 1 });
-      setMessage('已从服务端恢复生成结果。');
+      setMessage(t('statusMessages.serverResultRestored', '已从服务端恢复生成结果。'));
     }
     return true;
   }
 
+  function syncRemoteGenerationJob(job) {
+    if (!job?.id) return;
+    const existingTask = generationQueueRef.current.find((item) => item.serverJobId === job.id || item.id === `remote-${job.id}`);
+    const inheritedPrompt = job.prompt || existingTask?.prompt || existingTask?.summary || '';
+    const remoteStatus = job.status === 'succeeded'
+      ? 'done'
+      : job.status === 'failed'
+        ? 'failed'
+        : job.status === 'canceled'
+          ? 'canceled'
+          : job.status === 'unknown'
+            ? 'unknown'
+            : ['queued', 'dispatching'].includes(job.status)
+              ? 'queued'
+              : 'running';
+    const remoteTask = {
+      id: `remote-${job.id}`,
+      serverJobId: job.id,
+      remote: true,
+      status: remoteStatus,
+      createdAt: Date.parse(job.createdAt || '') || Date.now(),
+      startedAt: Date.parse(job.startedAt || '') || null,
+      completedAt: Date.parse(job.completedAt || '') || null,
+      mode: job.mode || 'image',
+      providerId: job.providerId || job.providerFamily || '',
+      providerFamily: job.providerFamily || job.providerId || '',
+      apiKeySource: job.apiKeySource || '',
+      providerLabel: job.providerLabel || '',
+      prompt: inheritedPrompt,
+      model: job.model || IMAGE_MODELS[0],
+      size: job.size || 'auto',
+      quality: job.quality || 'auto',
+      count: job.count || 1,
+      stage: job.stage || job.status || '',
+      completed: Number(job.completed || 0),
+      total: Number(job.total || job.count || 1),
+      resultUrls: Array.isArray(job.resultUrls) ? job.resultUrls.filter(Boolean).slice(0, 4) : [],
+      requestIds: Array.isArray(job.requestIds) ? job.requestIds.filter(Boolean).slice(0, 8) : [],
+      error: job.error || null,
+      selectedCanvasNodeId: job.parentCanvasNodeId || '',
+      summary: inheritedPrompt || job.error?.message || `服务端任务 ${job.id}`,
+      restorable: false
+    };
+    generationQueueRef.current = [
+      remoteTask,
+      ...generationQueueRef.current.filter((item) => item.id !== remoteTask.id && item.serverJobId !== job.id)
+    ].slice(0, GENERATION_QUEUE_LIMIT);
+    setGenerationQueue(generationQueueRef.current);
+  }
+
+  function clearRemoteGenerationJob(jobId, status = 'done') {
+    if (!jobId) return;
+    generationQueueRef.current = generationQueueRef.current.map((item) => (
+      item.serverJobId === jobId || item.id === `remote-${jobId}`
+        ? { ...item, status, completedAt: Date.now() }
+        : item
+    ));
+    setGenerationQueue(generationQueueRef.current);
+  }
+
   useEffect(() => {
-    if (!isAuthenticated || !sessionId) return;
+    if (!remoteSessionReady || !sessionId) return;
     let cancelled = false;
     let syncController = null;
     const historyClient = new StudioHistoryClient({ session: loadSession() });
     historyClient.listGenerationJobs({ sessionId, limit: 12 })
       .then(async (jobs) => {
         if (cancelled) return;
+        const knownJobIds = new Set(jobs.map((job) => job?.id).filter(Boolean));
+        const restoredJobIds = generationQueueRef.current
+          .filter((item) => item?.serverJobId && item.remote && ['queued', 'running'].includes(item.status))
+          .map((item) => item.serverJobId)
+          .filter((jobId) => !knownJobIds.has(jobId));
+        if (restoredJobIds.length) {
+          const restoredJobs = await Promise.all(restoredJobIds.map((jobId) => (
+            historyClient.getGenerationJob(jobId).catch(() => null)
+          )));
+          if (cancelled) return;
+          jobs = [
+            ...jobs,
+            ...restoredJobs.filter((job) => job?.id && !knownJobIds.has(job.id))
+          ];
+        }
+        const visibleRemoteJobs = jobs.filter((job) => (
+          ['queued', 'dispatching', 'upstream', 'saving', 'failed', 'unknown', 'canceled'].includes(job.status)
+        ));
+        visibleRemoteJobs.forEach(syncRemoteGenerationJob);
         const succeededJobs = jobs
           .filter((job) => job.status === 'succeeded' && Array.isArray(job.resultUrls) && job.resultUrls.length)
           .reverse();
@@ -4067,10 +4853,19 @@ function CreationDesk({
         }
         if (generationRef.current.controller) return;
         const activeJob = jobs.find((job) => ['queued', 'dispatching', 'upstream', 'saving'].includes(job.status));
-        if (!activeJob || recoveredJobIdsRef.current.has(activeJob.id)) return;
+        if (!activeJob || recoveredJobIdsRef.current.has(activeJob.id)) {
+          const interruptedJob = jobs.find((job) => ['unknown', 'failed'].includes(job.status));
+          if (interruptedJob && !recoveredJobIdsRef.current.has(interruptedJob.id)) {
+            setStatus('error');
+            setProgress(serverJobProgress(interruptedJob, interruptedJob.count));
+            setMessage(serverJobMessage(interruptedJob));
+          }
+          return;
+        }
+        syncRemoteGenerationJob(activeJob);
         setStatus('loading');
         setProgress(serverJobProgress(activeJob, activeJob.count));
-        setMessage('检测到服务端仍有生成任务，正在继续同步状态。');
+            setMessage(t('statusMessages.serverJobsSyncing', '检测到服务端仍有生成任务，正在继续同步状态。'));
         const controller = new AbortController();
         syncController = controller;
         generationRef.current = { id: generationRef.current.id + 1, controller, remoteJobId: activeJob.id };
@@ -4079,7 +4874,9 @@ function CreationDesk({
           if (cancelled || !finalJob) return;
           if (finalJob.status === 'succeeded') {
             await attachServerJobResult(historyClient, finalJob);
+            clearRemoteGenerationJob(finalJob.id, 'done');
           } else {
+            clearRemoteGenerationJob(finalJob.id, finalJob.status === 'canceled' ? 'canceled' : 'failed');
             setStatus('error');
             setMessage(serverJobMessage(finalJob));
           }
@@ -4094,12 +4891,21 @@ function CreationDesk({
       cancelled = true;
       syncController?.abort(new DOMException('Session changed', 'AbortError'));
     };
-  }, [isAuthenticated, sessionId, remoteSession?.updatedAt]);
+  }, [remoteSessionReady, persistenceKey, sessionId]);
+
+  function composeCanvasContinuationPrompt(node, instruction) {
+    const currentPrompt = String(instruction || '').trim();
+    const parentPrompt = String(node?.prompt || '').trim();
+    if (!currentPrompt) return parentPrompt;
+    if (!parentPrompt || currentPrompt.startsWith(parentPrompt)) return currentPrompt;
+    return `${parentPrompt}\n\n基于画布 #${node?.canvasIndex || ''} 继续优化：\n${currentPrompt}`.trim();
+  }
 
   function composedGenerationPrompt() {
     const currentPrompt = prompt.trim();
     if (!currentPrompt) return selectedCanvasNode?.prompt?.trim() || '';
     if (!selectedCanvasNode?.prompt) return currentPrompt;
+    return composeCanvasContinuationPrompt(selectedCanvasNode, currentPrompt);
     const parentPrompt = selectedCanvasNode.prompt.trim();
     if (!parentPrompt || currentPrompt.startsWith(parentPrompt)) return currentPrompt;
     return `${parentPrompt}\n\n基于画布 ${selectedCanvasNode.canvasIndex || ''} 继续优化：${currentPrompt}`.trim();
@@ -4128,7 +4934,7 @@ function CreationDesk({
     if (!text) return;
     await navigator.clipboard.writeText(text);
     setStatus('success');
-    setMessage(`#${node.canvasIndex || ''} 的提示词已复制。`);
+    setMessage(t('statusMessages.nodePromptCopied', '#{index} 的提示词已复制。', { index: node.canvasIndex || '' }));
     window.setTimeout(() => setStatus('idle'), 1200);
   }
 
@@ -4141,11 +4947,11 @@ function CreationDesk({
       setMode('edit');
       updateLayoutSections({ references: true, bottomComposer: true });
       setStatus('success');
-      setMessage(`#${node.canvasIndex || ''} 已设为本轮参考图。`);
+      setMessage(t('statusMessages.nodeReferenceSet', '#{index} 已设为本轮参考图。', { index: node.canvasIndex || '' }));
       window.setTimeout(() => setStatus('idle'), 1200);
     } catch (error) {
       setStatus('error');
-      setMessage(error?.message || '这张图暂时无法设为参考图。');
+      setMessage(error?.message || t('statusMessages.nodeReferenceFailed', '这张图暂时无法设为参考图。'));
     }
   }
 
@@ -4187,7 +4993,7 @@ function CreationDesk({
     if (deletedIds.has(selectedCanvasNodeId)) setSelectedCanvasNodeId('');
     if (deletedIds.has(canvasEditorNodeId)) closeCanvasEditor();
     setStatus('success');
-    setMessage(`#${node.canvasIndex || ''} 已从当前画布移除。`);
+    setMessage(t('statusMessages.nodeDeleted', '#{index} 已从当前画布移除。', { index: node.canvasIndex || '' }));
     window.setTimeout(() => setStatus('idle'), 1200);
   }
 
@@ -4214,22 +5020,29 @@ function CreationDesk({
   function generateFromCanvasEditor(node, modeOverride = canvasEditorMode) {
     if (!node) return;
     const nextPrompt = canvasEditorPrompt.trim();
+    const normalizedMode = modeOverride === 'mask' ? 'mask' : modeOverride === 'edit' ? 'edit' : 'image';
+    const generationPrompt = normalizedMode === 'image'
+      ? composeCanvasContinuationPrompt(node, nextPrompt)
+      : nextPrompt;
     setSelectedCanvasNodeId(node.id);
-    setMode(modeOverride);
-    if (modeOverride === 'mask') {
+    setMode(normalizedMode);
+    if (normalizedMode === 'mask') {
       updateLayoutSections({ references: true, bottomComposer: false });
-      setPrompt(nextPrompt);
+      setPrompt(generationPrompt);
       if (!maskEditorRef.current?.exportMask?.()) {
         setStatus('idle');
-        setMessage('先在 Mask 面板涂抹需要重绘的区域，再回到这张图点生成。');
+        setMessage(t('statusMessages.maskPaintRequired', '先在 Mask 面板涂抹需要重绘的区域，再回到这张图点生成。'));
         return;
       }
     }
-    setPrompt(nextPrompt);
+    setPrompt(generationPrompt);
     setPendingCanvasGenerate({
       nodeId: node.id,
-      mode: modeOverride,
-      prompt: nextPrompt,
+      mode: normalizedMode,
+      prompt: generationPrompt,
+      referenceItems: [],
+      referencesOpen: normalizedMode !== 'image',
+      selectedCanvasNodeSnapshot: { ...node },
       requestId: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     });
   }
@@ -4237,7 +5050,7 @@ function CreationDesk({
   function generateMaskFromPanel() {
     if (!selectedCanvasNode) {
       setStatus('error');
-      setMessage('请先选中一张画布图片，再用 Mask 继续生成。');
+      setMessage(t('statusMessages.maskSelectNode', '请先选中一张画布图片，再用 Mask 继续生成。'));
       return;
     }
     setCanvasEditorMode('mask');
@@ -4396,7 +5209,7 @@ function CreationDesk({
     setPrompt((current) => `${current.trim()}${current.trim() ? '\n\n' : ''}${appendTemplateRequest.prompt}`.trim());
     updateLayoutSections({ bottomComposer: true });
     setStatus('success');
-    setMessage('已追加模板提示词。');
+    setMessage(t('statusMessages.templateAppended', '已追加模板提示词。'));
     window.setTimeout(() => setStatus('idle'), 1200);
     onAppendTemplateConsumed?.(appendTemplateRequest.id);
   }, [appendTemplateRequest?.id]);
@@ -4421,7 +5234,7 @@ function CreationDesk({
     const nextFiles = supportedReferenceFiles(files, IMAGE_REFERENCE_LIMIT);
     if (!nextFiles.length) {
       setStatus('error');
-      setMessage('只支持 PNG / JPG / WebP 参考图。');
+      setMessage(t('statusMessages.referenceUnsupported', '只支持 PNG / JPG / WebP 参考图。'));
       return;
     }
     if (mode === 'image') setMode('edit');
@@ -4437,7 +5250,7 @@ function CreationDesk({
     const nextFiles = supportedReferenceFiles(files, 1);
     if (!nextFiles.length) {
       setStatus('error');
-      setMessage('只支持 PNG / JPG / WebP 参考图。');
+      setMessage(t('statusMessages.referenceUnsupported', '只支持 PNG / JPG / WebP 参考图。'));
       return;
     }
     setVideoReferenceFiles(nextFiles);
@@ -4475,7 +5288,7 @@ function CreationDesk({
     if (maskExportUrl) URL.revokeObjectURL(maskExportUrl);
     setMaskExportUrl(url);
     setStatus('success');
-    setMessage('Mask 已导出，可用于本次局部重绘。');
+    setMessage(t('statusMessages.maskExported', 'Mask 已导出，可用于本次局部重绘。'));
     window.setTimeout(() => setStatus('idle'), 1400);
   }
 
@@ -4525,7 +5338,9 @@ function CreationDesk({
     if (activeWorkspace !== 'history') {
       setMode(activeWorkspace === 'video' ? 'video' : selectedHistory.mode === 'mask' ? 'mask' : selectedHistory.mode === 'edit' ? 'edit' : 'image');
     }
-    setPrompt(selectedHistory.prompt || '');
+    const selectedResultItems = historyResultItems(selectedHistory);
+    const primaryPrompt = selectedResultItems[0]?.generationPrompt || selectedResultItems[0]?.prompt || selectedHistory.prompt || '';
+    setPrompt(primaryPrompt);
     setModel(selectedHistory.model || IMAGE_MODELS[0]);
     const nextSize = normalizeSize(selectedHistory.size || '1024x1024');
     setAspect(normalizeAspect(selectedHistory.aspect || selectedHistory.aspectRatio, nextSize));
@@ -4543,16 +5358,19 @@ function CreationDesk({
     setVideoStyle(normalizeVideoStyle(selectedHistory.videoStyle));
     setVideoQuality(normalizeVideoQuality(selectedHistory.videoQuality));
     setNegativePrompt(selectedHistory.negativePrompt || '');
-    const nextUrls = Array.isArray(selectedHistory.displayResultUrls)
-      ? selectedHistory.displayResultUrls
-      : Array.isArray(selectedHistory.resultUrls)
-        ? selectedHistory.resultUrls
-        : [];
+    const nextUrls = selectedResultItems.length
+      ? selectedResultItems.map((result) => result.displayUrl || result.url).filter(Boolean)
+      : Array.isArray(selectedHistory.displayResultUrls)
+        ? selectedHistory.displayResultUrls
+        : Array.isArray(selectedHistory.resultUrls)
+          ? selectedHistory.resultUrls
+          : [];
     setResults(selectedHistory.mode === 'video' ? [] : nextUrls);
     setVideoResults(selectedHistory.mode === 'video' ? nextUrls : []);
     setResultBatchMeta(downloadMetaFromHistoryItem(selectedHistory, selectedHistory.mode === 'video'));
     if (nextUrls.length) {
-      const nextNodes = nextUrls.map((url, index) => buildCanvasNodeFromHistoryItem(selectedHistory, url, index));
+      const nextNodes = (selectedResultItems.length ? selectedResultItems : nextUrls)
+        .map((result, index) => buildCanvasNodeFromHistoryItem(selectedHistory, result, index));
       setCanvasNodes(nextNodes);
       setSelectedCanvasNodeId(nextNodes[0]?.id || '');
       setCanvasView(canvasViewForNodes(nextNodes, nextNodes[0]?.id || ''));
@@ -4578,8 +5396,8 @@ function CreationDesk({
   }, [modelOptions?.image, modelOptions?.responses]);
 
   useEffect(() => {
-    if (videoModelOptions.length && !videoModelOptions.some((item) => item.id === videoModel)) {
-      setVideoModel(videoModelOptions[0].id);
+    if (syncedVideoModelOptions.length && !syncedVideoModelOptions.some((item) => item.id === videoModel)) {
+      setVideoModel(syncedVideoModelOptions[0].id);
     }
   }, [modelOptions?.video]);
 
@@ -4594,7 +5412,14 @@ function CreationDesk({
     if (prompt !== pendingCanvasGenerate.prompt) return;
     setPendingCanvasGenerate(null);
     closeCanvasEditor();
-    enqueueGeneration();
+    enqueueGeneration({
+      mode: pendingCanvasGenerate.mode,
+      prompt: pendingCanvasGenerate.prompt,
+      referenceItems: pendingCanvasGenerate.referenceItems,
+      referencesOpen: pendingCanvasGenerate.referencesOpen,
+      selectedCanvasNodeId: pendingCanvasGenerate.nodeId,
+      selectedCanvasNodeSnapshot: pendingCanvasGenerate.selectedCanvasNodeSnapshot
+    });
   }, [pendingCanvasGenerate?.requestId, selectedCanvasNodeId, mode, prompt]);
 
   useEffect(() => {
@@ -4655,16 +5480,18 @@ function CreationDesk({
     const currentPrompt = prompt.trim();
     if (!currentPrompt) {
       setStatus('error');
-      setMessage(caseResolving ? '模板提示词正在读取，请稍后。' : '请先填写提示词，或先选中一个画布节点继续。');
+      setMessage(caseResolving
+        ? t('statusMessages.templateLoading', '模板提示词正在读取，请稍后。')
+        : t('statusMessages.promptRequired', '请先填写提示词，或先选中一个画布节点继续。'));
       return;
     }
     if (caseResolving) {
       setStatus('error');
-      setMessage('模板提示词正在读取，请稍后。');
+      setMessage(t('statusMessages.templateLoading', '模板提示词正在读取，请稍后。'));
       return;
     }
     if (optimizingPrompt) return;
-    if (providerSettings.apiKeySource === 'sub2api' && !isAuthenticated) {
+    if (usesGatewayAccount(providerSettings) && !isAuthenticated) {
       saveDraft({
         caseId: selectedCase?.id || null,
         mode,
@@ -4679,13 +5506,15 @@ function CreationDesk({
     const providerRequest = resolveProviderRequest(providerSettings, apiKey);
     if (!providerRequest.apiKey) {
       setStatus('error');
-      setMessage(providerSettings.apiKeySource === 'manual' ? '请先填写密钥。' : '账号连接还在准备中。');
+      setMessage(providerSettings.apiKeySource === 'manual'
+        ? t('statusMessages.keyRequired', '请先填写密钥。')
+        : t('statusMessages.accountPreparing', '账号连接还在准备中。'));
       onOpenSettings();
       return;
     }
     setOptimizingPrompt(true);
     setStatus('loading');
-    setMessage('正在优化提示词');
+    setMessage(t('statusMessages.optimizingPrompt', '正在优化提示词'));
     try {
       const result = await client.optimizePrompt({
         ...providerRequest,
@@ -4698,16 +5527,16 @@ function CreationDesk({
         onPartial: (text) => {
           const parsed = parseOptimizedPrompt(text);
           if (parsed) setPromptSuggestion(parsed);
-          setMessage('正在接收优化建议');
+          setMessage(t('statusMessages.receivingSuggestion', '正在接收优化建议'));
         }
       });
       setPromptSuggestion(parseOptimizedPrompt(result.prompt));
       setStatus('success');
-      setMessage('已生成优化建议，可合并或替换。');
+      setMessage(t('statusMessages.suggestionReady', '已生成优化建议，可合并或替换。'));
       window.setTimeout(() => setStatus('idle'), 1200);
     } catch (error) {
       setStatus('error');
-      setMessage(error?.message || '优化失败');
+      setMessage(error?.message || t('statusMessages.optimizeFailed', '优化失败'));
     } finally {
       setOptimizingPrompt(false);
     }
@@ -4717,16 +5546,16 @@ function CreationDesk({
     const userText = assistantUserInstruction();
     if (!userText) {
       setStatus('error');
-      setMessage('请先输入你想让 AI 帮你整理的创作想法。');
+      setMessage(t('statusMessages.assistantInputRequired', '请先输入你想让 AI 帮你整理的创作想法。'));
       return;
     }
     if (caseResolving) {
       setStatus('error');
-      setMessage('模板提示词正在读取，请稍后。');
+      setMessage(t('statusMessages.templateLoading', '模板提示词正在读取，请稍后。'));
       return;
     }
     if (optimizingPrompt) return;
-    if (providerSettings.apiKeySource === 'sub2api' && !isAuthenticated) {
+    if (usesGatewayAccount(providerSettings) && !isAuthenticated) {
       saveDraft({
         caseId: selectedCase?.id || null,
         mode,
@@ -4741,7 +5570,9 @@ function CreationDesk({
     const providerRequest = resolveProviderRequest(providerSettings, apiKey);
     if (!providerRequest.apiKey) {
       setStatus('error');
-      setMessage(providerSettings.apiKeySource === 'manual' ? '请先填写密钥。' : '账号连接还在准备中。');
+      setMessage(providerSettings.apiKeySource === 'manual'
+        ? t('statusMessages.keyRequired', '请先填写密钥。')
+        : t('statusMessages.accountPreparing', '账号连接还在准备中。'));
       onOpenSettings();
       return;
     }
@@ -4754,14 +5585,14 @@ function CreationDesk({
     const pendingMessage = {
       id: `assistant-${Date.now()}`,
       role: 'assistant',
-      content: '正在整理创作提示词...',
+      content: t('statusMessages.assistantPending', '正在整理创作提示词...'),
       pending: true
     };
     const nextMessages = [...assistantMessages, userMessage];
     setAssistantMessages([...nextMessages, pendingMessage]);
     setOptimizingPrompt(true);
     setStatus('loading');
-    setMessage('正在调用对话模型');
+    setMessage(t('statusMessages.assistantCalling', '正在调用对话模型'));
     try {
       const result = await client.chatPromptAssistant({
         ...providerRequest,
@@ -4778,7 +5609,7 @@ function CreationDesk({
           const parsed = parseAssistantReply(text);
           setAssistantMessages((current) => current.map((item) => item.id === pendingMessage.id ? {
             ...item,
-            content: parsed?.reply || text || '正在整理创作提示词...',
+            content: parsed?.reply || text || t('statusMessages.assistantPending', '正在整理创作提示词...'),
             pending: true
           } : item));
         }
@@ -4797,17 +5628,19 @@ function CreationDesk({
         pending: false
       } : item));
       setStatus('success');
-      setMessage(parsed?.finalPrompt ? '已整理为可生成提示词。' : '助手已回复。');
+      setMessage(parsed?.finalPrompt
+        ? t('statusMessages.assistantReady', '已整理为可生成提示词。')
+        : t('statusMessages.assistantReplied', '助手已回复。'));
       window.setTimeout(() => setStatus('idle'), 1200);
     } catch (error) {
       setAssistantMessages((current) => current.map((item) => item.id === pendingMessage.id ? {
         ...item,
-        content: error?.message || '对话模型调用失败。',
+        content: error?.message || t('statusMessages.assistantFailed', '对话模型调用失败'),
         pending: false,
         failed: true
       } : item));
       setStatus('error');
-      setMessage(error?.message || '对话模型调用失败');
+      setMessage(error?.message || t('statusMessages.assistantFailed', '对话模型调用失败'));
     } finally {
       setOptimizingPrompt(false);
     }
@@ -4816,7 +5649,7 @@ function CreationDesk({
   function mergeSuggestion() {
     const nextPrompt = promptSuggestion?.finalPrompt || promptSuggestion?.raw || '';
     if (!nextPrompt) return;
-    setPrompt(`${prompt.trim()}\n\n补充优化：\n${nextPrompt}`.trim());
+    setPrompt(`${prompt.trim()}\n\n${t('statusMessages.suggestionMergePrefix', '补充优化：')}\n${nextPrompt}`.trim());
     setPromptSuggestion(null);
   }
 
@@ -4832,7 +5665,7 @@ function CreationDesk({
     if (!nextPrompt) return;
     await navigator.clipboard.writeText(nextPrompt);
     setStatus('success');
-    setMessage('优化建议已复制。');
+    setMessage(t('statusMessages.suggestionCopied', '优化建议已复制。'));
     window.setTimeout(() => setStatus('idle'), 1200);
   }
 
@@ -4858,13 +5691,17 @@ function CreationDesk({
     });
   }
 
-  function buildGenerationTask() {
-    const basePrompt = composedGenerationPrompt();
+  function buildGenerationTask(overrides = {}) {
+    const basePrompt = typeof overrides.prompt === 'string' ? overrides.prompt : composedGenerationPrompt();
+    const taskMode = overrides.mode || mode;
+    const taskReferenceItems = Array.isArray(overrides.referenceItems) ? overrides.referenceItems : referenceItems;
+    const taskSelectedCanvasNode = overrides.selectedCanvasNodeSnapshot
+      || (selectedCanvasNode ? { ...selectedCanvasNode } : null);
     return {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       status: 'queued',
       createdAt: Date.now(),
-      mode,
+      mode: taskMode,
       prompt: basePrompt,
       model,
       aspect,
@@ -4887,12 +5724,12 @@ function CreationDesk({
       videoStyle,
       videoQuality,
       negativePrompt,
-      referenceItems,
+      referenceItems: taskReferenceItems,
       videoReferenceFiles,
-      maskFile: mode === 'mask' ? maskEditorRef.current?.exportMask?.() || null : null,
-      selectedCanvasNodeId,
-      selectedCanvasNodeSnapshot: selectedCanvasNode ? { ...selectedCanvasNode } : null,
-      referencesOpen: layoutSections.references,
+      maskFile: taskMode === 'mask' ? maskEditorRef.current?.exportMask?.() || null : null,
+      selectedCanvasNodeId: overrides.selectedCanvasNodeId ?? selectedCanvasNodeId,
+      selectedCanvasNodeSnapshot: taskSelectedCanvasNode,
+      referencesOpen: overrides.referencesOpen ?? layoutSections.references,
       summary: basePrompt || prompt.trim() || selectedCanvasNode?.prompt?.trim() || '未填写提示词'
     };
   }
@@ -4904,22 +5741,100 @@ function CreationDesk({
     setGenerationQueue(generationQueueRef.current);
   }
 
-  function enqueueGeneration() {
-    const task = buildGenerationTask();
+  function cancelGenerationTask(id) {
+    const target = generationQueueRef.current.find((item) => item.id === id);
+    if (!target) return;
+    if (target.remote && target.serverJobId) {
+      const historyClient = new StudioHistoryClient({ session: loadSession() });
+      if (generationRef.current.remoteJobId === target.serverJobId) {
+        generationRef.current.controller?.abort(new Error('JOB_CANCELED'));
+        generationRef.current = { id: generationRef.current.id + 1, controller: null };
+      }
+      markGenerationTask(id, { status: 'canceled', completedAt: Date.now() });
+      setStatus('error');
+      setProgress((current) => ({
+        ...current,
+        stage: 'failed',
+        percent: 0
+      }));
+      historyClient.cancelGenerationJob(target.serverJobId)
+        .then((job) => {
+          setMessage(serverJobMessage(job || { status: 'canceled' }));
+        })
+        .catch(() => {
+          setMessage(t('statusMessages.queueCancelFailed', '已从本页移除队列项；服务端取消失败，请稍后查看历史图库确认结果。'));
+        });
+      return;
+    }
+    if (target.status === 'running') {
+      stopGeneration();
+      return;
+    }
+    generationQueueRef.current = generationQueueRef.current.map((item) => (
+      item.id === id ? { ...item, status: 'canceled', completedAt: Date.now() } : item
+    ));
+    setGenerationQueue(generationQueueRef.current);
+    setMessage(t('statusMessages.queueCanceled', '已取消排队任务。'));
+  }
+
+  function retryGenerationTask(id) {
+    const target = generationQueueRef.current.find((item) => item.id === id);
+    if (!target) return;
+    if (target.remote || target.restorable === false) {
+      setStatus('error');
+      setMessage(t('statusMessages.queueRemoteRetryBlocked', '这个任务来自服务端恢复记录，不能安全自动重提；请先确认历史图库没有新结果，再用当前提示词重新生成。'));
+      return;
+    }
+    const retryTask = {
+      ...target,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      status: 'queued',
+      createdAt: Date.now(),
+      startedAt: null,
+      completedAt: null,
+      restored: false,
+      summary: target.prompt || target.summary || t('statusMessages.queueRetryFallbackSummary', '重试生成任务')
+    };
+    generationQueueRef.current = [
+      retryTask,
+      ...generationQueueRef.current.filter((item) => item.id !== id)
+    ].slice(0, GENERATION_QUEUE_LIMIT);
+    setGenerationQueue(generationQueueRef.current);
+    setMessage(t('statusMessages.queueRetryAdded', '已重新加入生成队列。'));
+    runGenerationQueue();
+  }
+
+  function acknowledgeGenerationTask(id) {
+    const target = generationQueueRef.current.find((item) => item.id === id);
+    generationQueueRef.current = generationQueueRef.current.filter((item) => item.id !== id);
+    setGenerationQueue(generationQueueRef.current);
+    if (target?.status === 'unknown') {
+      setMessage(t('statusMessages.queueUnknownDismissed', '已收起结果未知的任务；请稍后查看历史图库，如果没有新结果再重试。'));
+    } else {
+      setMessage(t('statusMessages.queueDismissed', '已收起队列提示。'));
+    }
+  }
+
+  function enqueueGeneration(overrides = {}) {
+    const task = buildGenerationTask(overrides);
     if (!task.prompt) {
       setStatus('error');
-      setMessage(caseResolving ? '模板提示词正在读取，请稍后。' : '请先填写提示词，或先选中一个画布节点继续。');
+      setMessage(caseResolving
+        ? t('statusMessages.templateLoading', '模板提示词正在读取，请稍后。')
+        : t('statusMessages.promptRequired', '请先填写提示词，或先选中一个画布节点继续。'));
       return;
     }
     const activeCount = generationQueueRef.current.filter((item) => item.status === 'queued' || item.status === 'running').length;
     if (activeCount >= GENERATION_QUEUE_LIMIT) {
       setStatus('error');
-      setMessage(`当前队列已满，最多保留 ${GENERATION_QUEUE_LIMIT} 个待生成任务。`);
+      setMessage(t('statusMessages.queueLimit', '当前队列已满，最多保留 {count} 个待生成任务。', { count: GENERATION_QUEUE_LIMIT }));
       return;
     }
     generationQueueRef.current = [...generationQueueRef.current, task].slice(-GENERATION_QUEUE_LIMIT);
     setGenerationQueue(generationQueueRef.current);
-    setMessage(activeCount ? `已加入队列，前面还有 ${activeCount} 个任务。` : '已加入队列。');
+    setMessage(activeCount
+      ? t('statusMessages.queueAddedBehind', '已加入队列，前面还有 {count} 个任务。', { count: activeCount })
+      : t('statusMessages.queueAdded', '已加入队列。'));
     runGenerationQueue();
   }
 
@@ -4930,6 +5845,14 @@ function CreationDesk({
       while (true) {
         const nextTask = generationQueueRef.current.find((item) => item.status === 'queued');
         if (!nextTask) break;
+        if (nextTask.remote || nextTask.restorable === false) {
+          markGenerationTask(nextTask.id, {
+            status: 'failed',
+            completedAt: Date.now(),
+            summary: `${nextTask.summary || nextTask.prompt || t('composer.queue', '排队任务')}${t('statusMessages.queueRestoredUnsafeSuffix', '（刷新后不能安全自动重提）')}`
+          });
+          continue;
+        }
         markGenerationTask(nextTask.id, { status: 'running', startedAt: Date.now() });
         applyGenerationTaskSnapshot(nextTask);
         await new Promise((resolve) => window.setTimeout(resolve, 0));
@@ -4980,15 +5903,20 @@ function CreationDesk({
 
   function serverJobMessage(job) {
     const status = job?.status || job?.stage;
-    if (status === 'queued') return '已进入服务端队列，刷新页面也会继续保留状态。';
-    if (status === 'dispatching') return '服务端正在提交到 Sub2API。';
-    if (status === 'upstream') return '上游正在生成，服务端会继续等待并保存结果。';
-    if (status === 'saving') return '正在保存生成结果。';
-    if (status === 'succeeded') return '生成完成，结果已保存到服务端。';
-    if (status === 'unknown') return '服务端等待中断，结果未知；请稍后查看历史图库后再决定是否重试。';
-    if (status === 'canceled') return '任务已在本地取消。';
-    if (status === 'failed') return generationErrorMessage({ message: job?.error?.message || 'GENERATION_JOB_FAILED', status: job?.error?.status });
-    return '服务端任务处理中。';
+    if (status === 'queued') return t('jobs.queued', '已进入服务端队列，刷新页面也会继续保留状态。');
+    if (status === 'dispatching') return t('jobs.dispatching', '服务端正在提交到上游网关。');
+    if (status === 'upstream') return t('jobs.upstream', '上游正在生成，服务端会继续等待并保存结果。');
+    if (status === 'saving') return t('jobs.saving', '正在保存生成结果。');
+    if (status === 'succeeded') return t('jobs.succeeded', '生成完成，结果已保存到服务端。');
+    if (status === 'unknown') return t('jobs.unknown', '服务端等待中断，结果未知；请稍后查看历史图库后再决定是否重试。');
+    if (status === 'canceled') return t('jobs.canceled', '任务已在本地取消。');
+    if (status === 'failed') return generationErrorMessage({
+      ...(job?.error || {}),
+      message: job?.error?.message || 'GENERATION_JOB_FAILED',
+      status: job?.error?.status,
+      requestId: job?.error?.requestId || job?.requestIds?.[0] || ''
+    }, t);
+    return t('jobs.processing', '服务端任务处理中。');
   }
 
   async function waitForServerJob(historyClient, jobId, { signal, total }) {
@@ -5009,7 +5937,12 @@ function CreationDesk({
   async function generate(options = {}) {
     const task = options.task || null;
     const activeMode = task?.mode || mode;
-    const activeModel = task?.model || model;
+    const configuredImageModel = String(providerSettings.imageGenerationModel || '').trim();
+    const configuredEditModel = String(providerSettings.imageEditModel || '').trim();
+    const configuredVideoModel = String(providerSettings.videoModel || '').trim();
+    const activeModel = task?.model
+      || ((activeMode === 'edit' || activeMode === 'mask') ? configuredEditModel : configuredImageModel)
+      || model;
     const activePrompt = task?.prompt || composedGenerationPrompt();
     const activeSelectedNode = task?.selectedCanvasNodeSnapshot || selectedCanvasNode;
     const activeLineageParentId = activeSelectedNode?.id || '';
@@ -5021,8 +5954,26 @@ function CreationDesk({
     const activeResolutionTier = task?.resolutionTier || resolutionTier;
     const activeOutputFormat = task?.outputFormat || outputFormat;
     const activeModeration = task?.moderation || moderation;
-    const activeCount = normalizeCount(task?.count || countValue);
-    const activeVideoModel = task?.videoModel || videoModel;
+    const providerAdapter = resolveProviderAdapter({
+      providerId: providerSettings.providerId,
+      authMode: providerSettings.apiKeySource
+    });
+    const activeImageParameters = providerAdapter.normalizeImageParameters({
+      size: activeSize,
+      quality: activeQuality,
+      resolutionTier: activeResolutionTier,
+      outputFormat: activeOutputFormat,
+      moderation: activeModeration,
+      count: task?.count || countValue,
+      n: task?.count || countValue
+    });
+    const normalizedActiveSize = activeImageParameters.size;
+    const normalizedActiveQuality = activeImageParameters.quality;
+    const normalizedActiveResolutionTier = activeImageParameters.resolutionTier;
+    const normalizedActiveOutputFormat = activeImageParameters.outputFormat;
+    const normalizedActiveModeration = activeImageParameters.moderation;
+    const activeCount = normalizeCount(activeImageParameters.count);
+    const activeVideoModel = task?.videoModel || configuredVideoModel || videoModel;
     const activeVideoAspect = task?.videoAspect || videoAspect;
     const activeVideoDuration = normalizeVideoDuration(task?.videoDuration || task?.duration || videoDuration);
     const activeVideoFps = normalizeVideoFps(task?.videoFps || task?.fps || videoFps);
@@ -5033,13 +5984,13 @@ function CreationDesk({
     const activeVideoSize = videoSizeFromAspect(activeVideoAspect);
     if (caseResolving) {
       setStatus('error');
-      setMessage('模板提示词正在读取，请稍后。');
+      setMessage(t('statusMessages.templateLoading', '模板提示词正在读取，请稍后。'));
       return false;
     }
     if (status === 'loading' && !generationRef.current.controller) {
       setStatus('error');
       setProgress((current) => ({ ...current, stage: 'pending_review', percent: current.percent || 0 }));
-      setMessage('上一轮生成状态已经断开，请先确认历史图库/当前画布没有新结果，再点“确认重试”。');
+      setMessage(t('statusMessages.disconnectedReview', '上一轮生成状态已经断开，请先确认历史图库/当前画布没有新结果，再点“确认重试”。'));
       return false;
     }
     if (progress.stage === 'pending_review') {
@@ -5050,13 +6001,17 @@ function CreationDesk({
     const lineageParentId = activeLineageParentId;
     if (!basePrompt) {
       setStatus('error');
-      setMessage(caseResolving ? '模板提示词正在读取，请稍后。' : '请先填写提示词，或先选中一个画布节点继续。');
+      setMessage(caseResolving
+        ? t('statusMessages.templateLoading', '模板提示词正在读取，请稍后。')
+        : t('statusMessages.promptRequired', '请先填写提示词，或先选中一个画布节点继续。'));
       return false;
     }
     const willUseCanvasReference = Boolean(activeSelectedNode && activeSelectedNode.kind !== 'video' && activeSelectedNode.url && (activeMode === 'edit' || activeMode === 'mask'));
     if (activeIsImageEditMode && !activeReferenceFiles.length && !willUseCanvasReference) {
       setStatus('error');
-      setMessage(activeMode === 'mask' ? '请先在 Mask 模式上传参考图。' : '请先上传参考图。');
+      setMessage(activeMode === 'mask'
+        ? t('statusMessages.maskModeReferenceRequired', '请先在 Mask 模式上传参考图。')
+        : t('statusMessages.referenceRequired', '请先上传参考图。'));
       return false;
     }
     let maskFile = null;
@@ -5064,11 +6019,11 @@ function CreationDesk({
       maskFile = options.maskFile || maskEditorRef.current?.exportMask?.() || null;
       if (!maskFile) {
         setStatus('error');
-        setMessage('请先在 Mask 编辑器里上传参考图并涂抹要重绘的区域。');
+        setMessage(t('statusMessages.maskEditorRequired', '请先在 Mask 编辑器里上传参考图并涂抹要重绘的区域。'));
         return false;
       }
     }
-    if (providerSettings.apiKeySource === 'sub2api' && !isAuthenticated) {
+    if (usesGatewayAccount(providerSettings) && !isAuthenticated) {
       saveDraft({
         caseId: selectedCase?.id || null,
         mode: activeMode,
@@ -5083,7 +6038,9 @@ function CreationDesk({
     const providerRequest = resolveProviderRequest(providerSettings, apiKey);
     if (!providerRequest.apiKey) {
       setStatus('error');
-      setMessage(providerSettings.apiKeySource === 'manual' ? '请先填写密钥。' : '账号连接还在准备中。');
+      setMessage(providerSettings.apiKeySource === 'manual'
+        ? t('statusMessages.keyRequired', '请先填写密钥。')
+        : t('statusMessages.accountPreparing', '账号连接还在准备中。'));
       onOpenSettings();
       return false;
     }
@@ -5113,7 +6070,7 @@ function CreationDesk({
     const isCurrentRequest = () => generationRef.current.id === requestId;
     const stallTimer = window.setTimeout(() => {
       if (!isCurrentRequest() || firstByteAt) return;
-      setMessage('上游还没有返回数据，可能正在排队或生成较慢，请继续等待。');
+      setMessage(t('statusMessages.upstreamStall', '上游还没有返回数据，可能正在排队或生成较慢，请继续等待。'));
       setProgress((current) => current.stage === 'request' ? { ...current, stage: 'queued', percent: Math.max(current.percent || 0, 12) } : current);
     }, GENERATION_STALL_NOTICE_MS);
     const timeoutTimer = window.setTimeout(() => {
@@ -5126,7 +6083,7 @@ function CreationDesk({
         stage: 'pending_review',
         percent: Math.max(current.percent || 0, 12)
       }));
-      setMessage('等待时间过长，这次页面已结束等待。上游可能仍在处理，请稍后查看历史图库后再决定是否重试。');
+      setMessage(t('errors.timeout', '等待时间过长，这次页面已结束等待。上游可能仍在处理，请稍后查看历史图库后再决定是否重试。'));
       const timeoutError = new Error('GENERATION_TIMEOUT');
       timeoutError.code = 'GENERATION_TIMEOUT';
       controller.abort(timeoutError);
@@ -5141,17 +6098,19 @@ function CreationDesk({
       firstByteAt: null,
       completedAt: null,
       model: activeMode === 'video' ? activeVideoModel : activeModel,
-      spec: activeMode === 'video' ? `${activeVideoAspect} · ${activeVideoDuration}s · ${activeVideoFps}fps` : `${activeSize} · ${activeQuality} · ${RESOLUTION_TIER_LABELS[activeResolutionTier] || activeResolutionTier}`
+      spec: activeMode === 'video' ? `${activeVideoAspect} · ${activeVideoDuration}s · ${activeVideoFps}fps` : `${normalizedActiveSize} · ${normalizedActiveQuality} · ${RESOLUTION_TIER_LABELS[normalizedActiveResolutionTier] || normalizedActiveResolutionTier}`
     });
-    setMessage('已提交');
+    setMessage(t('statusMessages.submitted', '已提交'));
     try {
       if (activeMode === 'video') {
-        if (!hasVideoModels || !activeVideoModel) {
+        if (!hasSyncedVideoModels || !activeVideoModel) {
           const failedAt = Date.now();
           setStatus('error');
           setProgress({ stage: 'failed', percent: 0, completed: 0, total: 1 });
           setTiming((current) => current ? { ...current, status: 'failed', completedAt: failedAt } : current);
-          setMessage(modelsStatus === 'loading' ? '正在读取当前 Key 的视频模型，请稍后。' : '当前 Key 没有开放视频模型。');
+          setMessage(modelsStatus === 'loading'
+            ? t('statusMessages.videoModelsLoadingWait', '正在读取当前 Key 的视频模型，请稍后。')
+            : t('statusMessages.videoModelsUnavailable', '当前 Key 没有开放视频模型。'));
           return false;
         }
         const referenceImage = activeVideoReferenceFiles[0]
@@ -5179,7 +6138,7 @@ function CreationDesk({
             style: activeVideoStyle,
             quality_level: activeVideoQuality,
             negative_prompt: activeNegativePrompt.trim(),
-            source: 'image-sub2api-studio'
+            source: 'ai-image-workbench'
           },
           signal: controller.signal,
           onProgress: (nextProgress) => {
@@ -5190,7 +6149,7 @@ function CreationDesk({
             }
             setVideoTask(nextProgress.task || null);
             setProgress((current) => ({ ...current, ...nextProgress }));
-            setMessage(progressText(nextProgress, '视频生成中'));
+            setMessage(progressText(nextProgress, t('progress.videoGenerating', '视频生成中')));
           }
         });
         if (!isCurrentRequest()) return false;
@@ -5214,7 +6173,7 @@ function CreationDesk({
       clearDraft();
       if (!options.fromQueue) setPrompt('');
       setStatus('success');
-      setMessage('视频生成完成。');
+      setMessage(t('statusMessages.videoDone', '视频生成完成。'));
         const historyId = generationMeta.id;
         const historyCreatedAt = generationMeta.createdAt;
         onHistoryAdd({
@@ -5257,7 +6216,7 @@ function CreationDesk({
             category: selectedCase.category
           } : null
         });
-        if (providerSettings.apiKeySource === 'sub2api') onProfileRefresh();
+        if (usesGatewayAccount(providerSettings)) onProfileRefresh();
         return true;
       }
 
@@ -5265,75 +6224,101 @@ function CreationDesk({
       if (!isCurrentRequest()) return false;
       const editReferenceFiles = [...canvasReferenceFiles, ...activeReferenceFiles].slice(0, IMAGE_REFERENCE_LIMIT);
       const shouldUseImageEdits = activeMode === 'mask' || (activeMode === 'edit' && editReferenceFiles.length > 0);
-      const effectivePrompt = withResolutionHint(basePrompt, activeResolutionTier);
+      const effectivePrompt = withResolutionHint(basePrompt, normalizedActiveResolutionTier, t);
       let payload = null;
       let urls = [];
       let persistedResultUrls = [];
-      const canUseServerJob = providerSettings.apiKeySource === 'sub2api' && isAuthenticated;
+      const canUseServerJob = Boolean(providerRequest.apiKey && (isAuthenticated || providerSettings.apiKeySource === 'manual'));
       if (canUseServerJob) {
-        const historyClient = new StudioHistoryClient({ session: loadSession() });
-        const jobImages = shouldUseImageEdits ? await generationFilesForJob(editReferenceFiles) : [];
-        const jobMask = maskFile ? {
-          name: maskFile.name || 'mask.png',
-          type: maskFile.type || 'image/png',
-          dataUrl: await fileToDataUrl(maskFile)
-        } : null;
-        if (!isCurrentRequest()) return false;
-        const job = await historyClient.createGenerationJob({
-          apiKey: providerRequest.apiKey,
-          gatewayBaseUrl: providerRequest.gatewayBaseUrl,
-          images: jobImages,
-          mask: jobMask,
-          request: {
-            id: generationMeta.id,
-            clientRequestId: `studio-${generationMeta.id}`,
-            sessionId,
-            parentCanvasNodeId: lineageParentId,
-            mode: activeMode,
-            route: shouldUseImageEdits ? 'edits' : 'generations',
-            model: activeModel,
-            prompt: basePrompt,
-            generationPrompt: effectivePrompt,
-            size: activeSize,
-            quality: activeQuality,
-            outputFormat: activeOutputFormat,
-            moderation: activeModeration,
-            n: activeCount,
-            count: activeCount
+        try {
+          const historyClient = new StudioHistoryClient({ session: loadSession() });
+          const jobImages = shouldUseImageEdits ? await generationFilesForJob(editReferenceFiles) : [];
+          const jobMask = maskFile ? {
+            name: maskFile.name || 'mask.png',
+            type: maskFile.type || 'image/png',
+            dataUrl: await fileToDataUrl(maskFile)
+          } : null;
+          if (!isCurrentRequest()) return false;
+          const job = await historyClient.createGenerationJob({
+            apiKey: providerRequest.apiKey,
+            gatewayBaseUrl: providerRequest.gatewayBaseUrl,
+            images: jobImages,
+            mask: jobMask,
+            request: {
+              id: generationMeta.id,
+              clientRequestId: `studio-${generationMeta.id}`,
+              sessionId,
+              parentCanvasNodeId: lineageParentId,
+              providerId: providerSettings.providerId,
+              providerFamily: providerSettings.providerId,
+              apiKeySource: providerSettings.apiKeySource,
+              providerLabel: providerLabel(providerSettings, apiKey),
+              mode: activeMode,
+              route: shouldUseImageEdits ? 'edits' : 'generations',
+              model: activeModel,
+              prompt: basePrompt,
+              generationPrompt: effectivePrompt,
+              size: normalizedActiveSize,
+              quality: normalizedActiveQuality,
+              resolutionTier: normalizedActiveResolutionTier,
+              outputFormat: normalizedActiveOutputFormat,
+              moderation: normalizedActiveModeration,
+              n: activeCount,
+              count: activeCount
+            }
+          });
+          if (!job?.id) throw new Error('GENERATION_JOB_CREATE_FAILED');
+          generationRef.current = { ...generationRef.current, remoteJobId: job.id };
+          if (options.queueTaskId) {
+            markGenerationTask(options.queueTaskId, {
+              serverJobId: job.id,
+              remote: true,
+              restorable: false,
+              summary: job.prompt || basePrompt || '服务端生成任务'
+            });
+          } else {
+            syncRemoteGenerationJob(job);
           }
-        });
-        if (!job?.id) throw new Error('GENERATION_JOB_CREATE_FAILED');
-        generationRef.current = { ...generationRef.current, remoteJobId: job.id };
-        setProgress(serverJobProgress(job, activeCount));
-        setMessage(serverJobMessage(job));
-        const finalJob = await waitForServerJob(historyClient, job.id, { signal: controller.signal, total: activeCount });
-        if (!isCurrentRequest()) return false;
-        if (!finalJob || finalJob.status !== 'succeeded') {
-          const error = new Error(finalJob?.error?.message || 'GENERATION_JOB_FAILED');
-          error.status = finalJob?.error?.status;
-          error.code = finalJob?.status === 'unknown' ? 'GENERATION_JOB_UNKNOWN' : finalJob?.error?.code;
-          throw error;
+          setProgress(serverJobProgress(job, activeCount));
+          setMessage(serverJobMessage(job));
+          const finalJob = await waitForServerJob(historyClient, job.id, { signal: controller.signal, total: activeCount });
+          if (!isCurrentRequest()) return false;
+          if (!finalJob || finalJob.status !== 'succeeded') {
+            if (finalJob?.id) syncRemoteGenerationJob(finalJob);
+            const error = new Error(finalJob?.error?.message || 'GENERATION_JOB_FAILED');
+            error.status = finalJob?.error?.status;
+            error.code = finalJob?.status === 'unknown' ? 'GENERATION_JOB_UNKNOWN' : finalJob?.error?.code;
+            throw error;
+          }
+          persistedResultUrls = Array.isArray(finalJob.resultUrls) ? finalJob.resultUrls : [];
+          urls = await Promise.all(persistedResultUrls.map((url) => historyClient.resolveAssetUrl(url).catch(() => url)));
+          if (!isCurrentRequest()) {
+            revokeBlobUrls(urls);
+            return false;
+          }
+          payload = {
+            data: urls.map((url) => ({ url })),
+            usage: finalJob.usage,
+            job: finalJob
+          };
+          if (!firstByteAt) {
+            firstByteAt = Date.now();
+            setTiming((current) => current ? { ...current, firstByteAt } : current);
+          }
+        } catch (error) {
+          if (generationRef.current.remoteJobId) throw error;
+          setMessage(t('statusMessages.serviceQueueFallback', '服务端队列暂不可用，已切换为本页直连生成。'));
         }
-        persistedResultUrls = Array.isArray(finalJob.resultUrls) ? finalJob.resultUrls : [];
-        urls = await Promise.all(persistedResultUrls.map((url) => historyClient.resolveAssetUrl(url).catch(() => url)));
-        payload = {
-          data: urls.map((url) => ({ url })),
-          usage: finalJob.usage,
-          job: finalJob
-        };
-        if (!firstByteAt) {
-          firstByteAt = Date.now();
-          setTiming((current) => current ? { ...current, firstByteAt } : current);
-        }
-      } else {
+      }
+      if (!payload) {
         const request = {
           ...providerRequest,
           model: activeModel,
           prompt: effectivePrompt,
-          size: activeSize,
-          quality: activeQuality,
-          outputFormat: activeOutputFormat,
-          moderation: activeModeration,
+          size: normalizedActiveSize,
+          quality: normalizedActiveQuality,
+          outputFormat: normalizedActiveOutputFormat,
+          moderation: normalizedActiveModeration,
           n: activeCount,
           signal: controller.signal,
           onPartial: (partialUrls) => {
@@ -5349,11 +6334,11 @@ function CreationDesk({
                 parentId: lineageParentId,
                 promptText: basePrompt,
                 downloadMeta: generationMeta,
-                title: '预览结果',
+                title: t('statusMessages.previewTitle', '预览结果'),
                 replaceBatchId: generationMeta.id
               });
             }
-            setMessage('收到预览');
+            setMessage(t('statusMessages.previewReceived', '收到预览'));
           },
           onProgress: (nextProgress) => {
             if (!isCurrentRequest()) return;
@@ -5362,17 +6347,17 @@ function CreationDesk({
               setTiming((current) => current ? { ...current, firstByteAt } : current);
             }
             setProgress((current) => ({ ...current, ...nextProgress }));
-            setMessage(progressText(nextProgress, '生成中'));
+            setMessage(progressText(nextProgress, t('statusMessages.generating', '生成中')));
           }
         };
         payload = shouldUseImageEdits
           ? await client.editImage({ ...request, images: editReferenceFiles, mask: maskFile })
-          : await client.generateImage({ ...request, referenceImages: editReferenceFiles });
+          : await client.generateImage({ ...request, referenceImages: [] });
         urls = getImageUrls(payload);
       }
       if (!isCurrentRequest()) return false;
       if (!urls.length) {
-        throw new Error('请求完成，但没有返回图片。');
+        throw new Error(t('statusMessages.noImagesReturned', '请求完成，但没有返回图片。'));
       }
       setResults(urls);
       appendCanvasNodes(urls, {
@@ -5380,7 +6365,7 @@ function CreationDesk({
         parentId: lineageParentId,
         promptText: basePrompt,
         downloadMeta: generationMeta,
-        title: '生成结果',
+        title: t('statusMessages.resultTitle', '生成结果'),
         replaceBatchId: generationMeta.id,
         persistedUrls: persistedResultUrls
       });
@@ -5390,7 +6375,9 @@ function CreationDesk({
       clearDraft();
       if (!options.fromQueue) setPrompt('');
       setStatus('success');
-      setMessage(urls.length ? '生成完成。' : '请求完成，但没有返回图片。');
+      setMessage(urls.length
+        ? t('statusMessages.imageDone', '生成完成。')
+        : t('statusMessages.noImagesReturned', '请求完成，但没有返回图片。'));
       const historyId = generationMeta.id;
       const historyCreatedAt = generationMeta.createdAt;
       onHistoryAdd({
@@ -5405,11 +6392,11 @@ function CreationDesk({
         aspect: task?.aspect || aspect,
         aspectRatio: task?.aspectRatio || task?.aspect || aspect,
         customSize: task?.customSize || customSize,
-        size: activeSize,
-        quality: activeQuality,
-        resolutionTier: activeResolutionTier,
-        outputFormat: activeOutputFormat,
-        moderation: activeModeration,
+        size: normalizedActiveSize,
+        quality: normalizedActiveQuality,
+        resolutionTier: normalizedActiveResolutionTier,
+        outputFormat: normalizedActiveOutputFormat,
+        moderation: normalizedActiveModeration,
         count: activeCount,
         usageSummary: payloadUsageSummary(payload),
         timing: {
@@ -5427,7 +6414,7 @@ function CreationDesk({
           category: selectedCase.category
         } : null
       });
-      if (providerSettings.apiKeySource === 'sub2api') onProfileRefresh();
+      if (usesGatewayAccount(providerSettings)) onProfileRefresh();
       return true;
     } catch (error) {
       if (!isCurrentRequest() && !timeoutReached) return false;
@@ -5442,7 +6429,7 @@ function CreationDesk({
         stage: timeoutReached || firstByteAt ? 'pending_review' : 'failed',
         percent: current.percent || 0
       }));
-      setMessage(generationErrorMessage(displayError));
+      setMessage(generationErrorMessage(displayError, t));
       return false;
     } finally {
       if (isCurrentRequest()) {
@@ -5457,6 +6444,7 @@ function CreationDesk({
     const activeGeneration = generationRef.current;
     if (!activeGeneration?.controller) return;
     const currentRunningTask = generationQueueRef.current.find((item) => item.status === 'running');
+    const remoteJobId = activeGeneration.remoteJobId || currentRunningTask?.serverJobId || '';
     const stoppedError = new Error('GENERATION_STOPPED');
     stoppedError.code = 'GENERATION_STOPPED';
     activeGeneration.controller.abort(stoppedError);
@@ -5469,8 +6457,15 @@ function CreationDesk({
       percent: current.percent || 0
     }));
     setTiming((current) => current ? { ...current, status: 'failed', completedAt: stoppedAt } : current);
-    setMessage(generationErrorMessage(stoppedError));
+    setMessage(generationErrorMessage(stoppedError, t));
     if (currentRunningTask) markGenerationTask(currentRunningTask.id, { status: 'failed', completedAt: stoppedAt });
+    if (remoteJobId) {
+      clearRemoteGenerationJob(remoteJobId, 'canceled');
+      const historyClient = new StudioHistoryClient({ session: loadSession() });
+      historyClient.cancelGenerationJob(remoteJobId)
+        .then((job) => setMessage(serverJobMessage(job || { status: 'canceled' })))
+        .catch(() => setMessage(t('errors.cancelFailed', '已停止本页等待；服务端取消失败，请稍后查看历史图库/当前画布，再决定是否重试。')));
+    }
   }
 
   const primaryImageResult = mode !== 'video' ? results[0] || '' : '';
@@ -5515,8 +6510,14 @@ function CreationDesk({
     }
     enqueueGeneration();
   };
-  const maskSourcePreview = referencePreviews[0] || (mode === 'mask' && selectedCanvasNode?.kind !== 'video' ? selectedCanvasNode.url : '');
+  const maskSourcePreview = referencePreviews[0] || (mode === 'mask' && selectedCanvasNode && selectedCanvasNode.kind !== 'video' ? selectedCanvasNode.url : '');
   const maskSourceFile = referenceFiles[0] || (maskSourcePreview ? { name: selectedCanvasNode ? `#${selectedCanvasNode.canvasIndex || 1}.png` : 'reference.png' } : null);
+  const referenceSideCount = mode === 'mask'
+    ? (maskSourcePreview ? 1 : 0)
+    : mode === 'video'
+      ? videoReferenceFiles.length
+      : referenceFiles.length;
+  const referenceSideLimit = mode === 'mask' || mode === 'video' ? 1 : IMAGE_REFERENCE_LIMIT;
   const composerUsesEditRoute = mode === 'mask' || (mode === 'edit' && (referenceFiles.length || selectedCanvasNode?.url));
   const composerRouteLabel = mode === 'video'
     ? t('composer.routeVideo', '视频任务接口')
@@ -5536,23 +6537,78 @@ function CreationDesk({
       ? t('composer.contextVideo', '视频参数在右侧设置')
       : t('composer.title', '把想法说出来，先整理，再生成');
   const composerGenerationVisible = status === 'loading' || progress.stage === 'failed' || progress.stage === 'pending_review' || (status === 'error' && Boolean(message));
-  const composerQuickRecipes = CREATIVE_RECIPES.slice(0, 5);
-  const composerQuickPresets = visiblePromptPresets.slice(0, 4);
+  const composerThreadHasContent = Boolean(composerGenerationVisible || assistantMessages.length || promptSuggestion);
+  const activeGenerationQueueItems = generationQueue.filter((item) => CURRENT_PROJECT_QUEUE_STATUSES.has(item.status));
+  const composerFolded = layoutSections.bottomComposer && layoutSections.composerFolded === true;
+  const toggleComposerFold = () => updateLayoutSections({
+    bottomComposer: true,
+    composerFolded: !composerFolded,
+    composerParameters: composerFolded ? layoutSections.composerParameters : false
+  });
 
   return (
-    <section className={`creationDesk ${layoutSections.references ? 'referencesOpen' : ''} ${layoutSections.bottomComposer ? 'composerOpen' : ''} ${layoutSections.composerParameters === false ? 'composerParamsCollapsed' : ''} ${layoutSections.parametersRail === false ? 'paramRailCollapsed' : ''}`}>
+    <section className={`creationDesk ${layoutSections.references ? 'referencesOpen' : ''} ${layoutSections.bottomComposer ? 'composerOpen' : ''} ${composerThreadHasContent ? 'composerHasThread' : ''} ${layoutSections.composerParameters === false ? 'composerParamsCollapsed' : ''} ${layoutSections.parametersRail === false ? 'paramRailCollapsed' : ''} ${composerFolded ? 'composerFolded' : ''}`}>
       <div
-        className={`workPreview infiniteCanvas ${hasPrimaryResult ? 'hasResult' : ''}`}
+        ref={workPreviewRef}
+        className={`workPreview infiniteCanvas ${hasPrimaryResult ? 'hasResult' : ''} ${canvasPerformanceMode ? 'performanceMode' : ''}`}
         onPointerDown={startCanvasPan}
         onPointerMove={moveCanvasPan}
         onPointerUp={endCanvasPan}
         onPointerCancel={endCanvasPan}
       >
+        {activeGenerationQueueItems.length ? (
+          <div className="canvasQueueDock" aria-label={t('composer.queue', '生成队列')} onPointerDown={(event) => event.stopPropagation()}>
+            <div className="canvasQueueHead">
+              <strong>{t('composer.queue', '生成队列')}</strong>
+              <span>{generationQueueHeadline(activeGenerationQueueItems, t)}</span>
+            </div>
+            <div className="canvasQueueList">
+              {activeGenerationQueueItems.slice(0, 5).map((item, index) => (
+                <div className={`canvasQueueItem ${item.status}`} key={item.id}>
+                  <b>#{index + 1}</b>
+                  <span>{generationQueueStatusLabel(item.status, t)}</span>
+                  <p>{generationQueueSummary(item, t)}</p>
+                  {item.status === 'queued' || item.status === 'running' ? (
+                    <button
+                      type="button"
+                      onClick={() => cancelGenerationTask(item.id)}
+                      aria-label={item.status === 'running' ? t('composer.cancelRunningTask', '停止当前任务') : t('composer.cancelQueuedTask', '取消排队任务')}
+                      title={item.status === 'running' ? t('composer.cancelRunningTask', '停止当前任务') : t('composer.cancelQueuedTask', '取消排队任务')}
+                    >
+                      <X size={13} />
+                    </button>
+                  ) : null}
+                  {item.status === 'failed' && !item.remote && item.restorable !== false ? (
+                    <button
+                      type="button"
+                      className="retryQueueAction"
+                      onClick={() => retryGenerationTask(item.id)}
+                      aria-label={t('composer.retryTask', '重试这个任务')}
+                      title={t('composer.retryTask', '重试这个任务')}
+                    >
+                      <Redo2 size={13} />
+                    </button>
+                  ) : null}
+                  {item.status === 'failed' || item.status === 'unknown' || item.status === 'canceled' || item.status === 'done' ? (
+                    <button
+                      type="button"
+                      onClick={() => acknowledgeGenerationTask(item.id)}
+                      aria-label={t('composer.dismissQueueNotice', '收起队列提示')}
+                      title={t('composer.dismissQueueNotice', '收起队列提示')}
+                    >
+                      <X size={13} />
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="canvasToolbar" aria-label={t('canvas.toolbar', '画布工具')}>
-          <button type="button" onClick={() => setCanvasZoom((value) => value - 0.1)} aria-label={t('canvas.zoomOut', '缩小画布')}>-</button>
+          <button type="button" onClick={() => setCanvasZoom((value) => value - 0.1)} aria-label={t('canvas.zoomOut', '缩小画布')} title={`${t('canvas.zoomOut', '缩小画布')} Ctrl/Cmd + -`}>-</button>
           <span>{Math.round(canvasView.zoom * 100)}%</span>
-          <button type="button" onClick={() => setCanvasZoom((value) => value + 0.1)} aria-label={t('canvas.zoomIn', '放大画布')}>+</button>
-          <button type="button" onClick={resetCanvasView}>{t('canvas.reset', '重置')}</button>
+          <button type="button" onClick={() => setCanvasZoom((value) => value + 0.1)} aria-label={t('canvas.zoomIn', '放大画布')} title={`${t('canvas.zoomIn', '放大画布')} Ctrl/Cmd + +`}>+</button>
+          <button type="button" onClick={resetCanvasView} title={`${t('canvas.reset', '重置')} Ctrl/Cmd + 0`}>{t('canvas.reset', '重置')}</button>
         </div>
         <div
           className="canvasPlane"
@@ -5562,8 +6618,8 @@ function CreationDesk({
             transform: `translate(calc(-50% + ${canvasView.x}px), calc(-50% + ${canvasView.y}px)) scale(${canvasView.zoom})`
           }}
         >
-          {canvasEdges.length || canvasLinkPreview ? (
-            <svg className={`canvasLinks ${selectedCanvasNodeId ? 'hasSelection' : ''} ${canvasLinkDraft ? 'isLinking' : ''}`} width={CANVAS_PLANE_WIDTH} height={CANVAS_PLANE_HEIGHT} viewBox={`0 0 ${CANVAS_PLANE_WIDTH} ${CANVAS_PLANE_HEIGHT}`} aria-hidden="true">
+          {renderedCanvasEdges.length || canvasLinkPreview ? (
+            <svg className={`canvasLinks ${selectedCanvasNodeId ? 'hasSelection' : ''} ${canvasLinkDraft ? 'isLinking' : ''} ${canvasPerformanceMode ? 'performanceMode' : ''}`} width={CANVAS_PLANE_WIDTH} height={CANVAS_PLANE_HEIGHT} viewBox={`0 0 ${CANVAS_PLANE_WIDTH} ${CANVAS_PLANE_HEIGHT}`} aria-hidden="true">
               <defs>
                 <marker id="canvasLinkArrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
                   <path className="canvasLinkArrow" d="M 1 2 L 10 6 L 1 10 z" />
@@ -5579,7 +6635,7 @@ function CreationDesk({
                   </feMerge>
                 </filter>
               </defs>
-              {canvasEdges.map((edge) => {
+              {renderedCanvasEdges.map((edge) => {
                 const fromWidth = nodeWidth(edge.from);
                 const fromHeight = nodeHeight(edge.from);
                 const toHeight = nodeHeight(edge.to);
@@ -5623,6 +6679,8 @@ function CreationDesk({
             const nodeIndex = Math.max(0, (node.canvasIndex || 1) - 1);
             const currentNodeWidth = nodeWidth(node);
             const currentNodeHeight = nodeHeight(node);
+            const nodeIsVisible = visibleCanvasNodeIds.has(node.id);
+            const nodeIsVirtualized = canvasPerformanceMode && !nodeIsVisible;
             const nodeExtension = node.kind === 'video' ? resultVideoExtension(node.url) : resultExtension(node.url, outputFormat);
             const nodeDownloadName = buildStudioDownloadFilename({
               ...(node.downloadMeta || currentDownloadMeta || {}),
@@ -5632,7 +6690,7 @@ function CreationDesk({
             });
             return (
               <div
-                className={`canvasNode resultNode graphNode ${selectedCanvasNodeId === node.id ? 'selected' : ''} ${childNodeIds.has(node.id) ? 'lineageChild' : ''} ${parentNodeIds.has(node.id) ? 'lineageParent' : ''} ${linkedNodeIds.has(node.id) ? 'linkingRelated' : ''} ${canvasLinkDraft?.fromId === node.id ? 'linkingSource' : ''} ${canvasEditorNodeId === node.id ? 'editing' : ''}`}
+                className={`canvasNode resultNode graphNode ${selectedCanvasNodeId === node.id ? 'selected' : ''} ${childNodeIds.has(node.id) ? 'lineageChild' : ''} ${parentNodeIds.has(node.id) ? 'lineageParent' : ''} ${linkedNodeIds.has(node.id) ? 'linkingRelated' : ''} ${canvasLinkDraft?.fromId === node.id ? 'linkingSource' : ''} ${canvasEditorNodeId === node.id ? 'editing' : ''} ${nodeIsVirtualized ? 'virtualized' : ''}`}
                 key={node.id}
                 style={{
                   left: `calc(50% + ${node.x}px)`,
@@ -5672,7 +6730,13 @@ function CreationDesk({
                     openCanvasEditor(node);
                   }}
                 >
-                  {node.kind === 'video' ? (
+                  {nodeIsVirtualized ? (
+                    <div className="canvasNodePlaceholder">
+                      <ImageIcon size={20} />
+                      <strong>#{node.canvasIndex || ''}</strong>
+                      <span>{compact(node.prompt || node.title || '', 32)}</span>
+                    </div>
+                  ) : node.kind === 'video' ? (
                     <video src={displayResultUrl(node.url)} playsInline preload="metadata" />
                   ) : (
                     <>
@@ -5813,7 +6877,7 @@ function CreationDesk({
                     const nextFile = supportedReferenceFiles(files, 1)[0];
                     if (!nextFile) {
                       setStatus('error');
-                      setMessage('只支持 PNG / JPG / WebP 参考图。');
+                      setMessage(t('references.unsupportedFormat', '只支持 PNG / JPG / WebP 参考图。'));
                       return;
                     }
                     setReferenceItems([createReferenceItem(nextFile, 'identity')]);
@@ -5832,6 +6896,7 @@ function CreationDesk({
                   }}
                   onGenerate={selectedCanvasNode ? generateMaskFromPanel : null}
                   generating={status === 'loading'}
+                  t={t}
                 />
                 {maskExportUrl ? (
                   <div className="maskExportPreview">
@@ -5841,7 +6906,7 @@ function CreationDesk({
                 ) : null}
               </div>
             ) : mode === 'video' ? (
-              <div className="referenceSideBody">
+              <div className={`referenceSideBody ${videoReferencePreviews.length ? 'hasReferenceItems' : ''}`}>
                 <label
                   className={`uploadDrop sideUploadDrop ${videoDropActive ? 'isDragging' : ''}`}
                   tabIndex={0}
@@ -5862,7 +6927,7 @@ function CreationDesk({
                   onPaste={videoReferencePasteFiles}
                 >
                   <Upload size={18} />
-                  <span>{videoReferenceFiles.length ? t('references.selectedVideo', '已选择视频参考图') : t('references.optionalUpload', '拖拽 / 粘贴 / 上传参考图，可选')}</span>
+                  <span>{videoReferenceFiles.length ? t('references.replaceVideo', '更换 / 拖入更多') : t('references.optionalUpload', '拖拽 / 粘贴 / 上传参考图，可选')}</span>
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
@@ -5876,7 +6941,23 @@ function CreationDesk({
                   <div className="referenceThumbs sideReferenceThumbs videoReferenceThumbs">
                     {videoReferencePreviews.map((url, index) => (
                       <figure key={url}>
-                        <img src={url} alt={videoReferenceFiles[index]?.name || t('references.videoReference', '视频参考图')} />
+                        <button
+                          type="button"
+                          className="referencePreviewButton"
+                          onClick={() => setPreviewImage({
+                            url,
+                            index,
+                            downloadMeta: {
+                              mode: 'image',
+                              providerId: mode === 'video' ? videoModel : model,
+                              prompt: prompt.trim(),
+                              createdAt: new Date().toISOString()
+                            }
+                          })}
+                          aria-label={t('references.preview', '查看参考图')}
+                        >
+                          <LazyImage src={url} alt={videoReferenceFiles[index]?.name || t('references.videoReference', '视频参考图')} />
+                        </button>
                         <button type="button" onClick={removeVideoReferenceImage} aria-label={t('references.remove', '移除参考图')}>
                           <X size={13} />
                         </button>
@@ -5886,7 +6967,7 @@ function CreationDesk({
                 ) : null}
               </div>
             ) : (
-              <div className="referenceSideBody">
+              <div className={`referenceSideBody ${referencePreviews.length ? 'hasReferenceItems' : ''}`}>
                 <label
                   className={`uploadDrop sideUploadDrop ${referenceDropActive ? 'isDragging' : ''}`}
                   tabIndex={0}
@@ -5907,7 +6988,7 @@ function CreationDesk({
                   onPaste={referencePasteFiles}
                 >
                   <Upload size={18} />
-                  <span>{referenceFiles.length ? t('references.selected', '已选择 {count} 张', { count: referenceFiles.length }) : t('references.upload', '拖拽 / 粘贴 / 上传参考图')}</span>
+                  <span>{referenceFiles.length ? t('references.addMore', '继续添加 / 拖入更多') : t('references.upload', '拖拽 / 粘贴 / 上传参考图')}</span>
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
@@ -5922,7 +7003,23 @@ function CreationDesk({
                   <div className="referenceThumbs sideReferenceThumbs">
                     {referencePreviews.map((url, index) => (
                       <figure key={url}>
-                        <img src={url} alt={referenceItems[index]?.file?.name || t('references.referenceIndex', '参考 {index}', { index: index + 1 })} />
+                        <button
+                          type="button"
+                          className="referencePreviewButton"
+                          onClick={() => setPreviewImage({
+                            url,
+                            index,
+                            downloadMeta: {
+                              mode: 'reference',
+                              providerId: mode === 'video' ? videoModel : model,
+                              prompt: prompt.trim(),
+                              createdAt: new Date().toISOString()
+                            }
+                          })}
+                          aria-label={t('references.preview', '查看参考图')}
+                        >
+                          <LazyImage src={url} alt={referenceItems[index]?.file?.name || t('references.referenceIndex', '参考 {index}', { index: index + 1 })} />
+                        </button>
                         <figcaption>
                           <select
                             value={referenceItems[index]?.role || 'identity'}
@@ -5935,6 +7032,10 @@ function CreationDesk({
                           </select>
                           <span>{index === 0 ? t('references.mainReference', '主参考') : t('references.referenceIndex', '参考 {index}', { index: index + 1 })}</span>
                         </figcaption>
+                        <div className="referenceFileMeta">
+                          <strong>{referenceItems[index]?.file?.name || t('references.referenceIndex', '参考 {index}', { index: index + 1 })}</strong>
+                          <span>{formatFileSize(referenceItems[index]?.file?.size) || t('references.preview', '查看参考图')}</span>
+                        </div>
                         <div className="referenceThumbActions">
                           <button type="button" onClick={() => moveReferenceImage(index, -1)} disabled={index === 0} aria-label={t('references.moveBefore', '前移参考图')}>
                             <ArrowUp size={13} />
@@ -5952,10 +7053,14 @@ function CreationDesk({
                 ) : null}
               </div>
             )}
+            <div className="referenceSideFoot">
+              <span>{referenceSideCount}/{referenceSideLimit}</span>
+              <strong>{t('references.title', '参考图')}</strong>
+            </div>
           </>
         ) : (
           <button type="button" className="referenceSideCollapsed" onClick={() => toggleLayoutSection('references')}>
-            <Upload size={17} />
+            <Images size={17} />
             <span>{t('references.title', '参考图')}</span>
           </button>
         )}
@@ -6047,7 +7152,7 @@ function CreationDesk({
               <div className="referenceThumbs">
                 {referencePreviews.map((url, index) => (
                   <figure key={url}>
-                    <img src={url} alt={referenceItems[index]?.file?.name || t('references.referenceIndex', '参考 {index}', { index: index + 1 })} />
+                    <LazyImage src={url} alt={referenceItems[index]?.file?.name || t('references.referenceIndex', '参考 {index}', { index: index + 1 })} />
                     <figcaption>
                       <select
                         value={referenceItems[index]?.role || 'identity'}
@@ -6098,7 +7203,7 @@ function CreationDesk({
                 const nextFile = supportedReferenceFiles(files, 1)[0];
                 if (!nextFile) {
                   setStatus('error');
-                  setMessage('只支持 PNG / JPG / WebP 参考图。');
+                  setMessage(t('statusMessages.referenceUnsupported', '只支持 PNG / JPG / WebP 参考图。'));
                   return;
                 }
                 setReferenceItems([createReferenceItem(nextFile, 'identity')]);
@@ -6173,7 +7278,7 @@ function CreationDesk({
               <div className="referenceThumbs videoReferenceThumbs">
                 {videoReferencePreviews.map((url, index) => (
                   <figure key={url}>
-                    <img src={url} alt={videoReferenceFiles[index]?.name || t('references.videoReference', '视频参考图')} />
+                    <LazyImage src={url} alt={videoReferenceFiles[index]?.name || t('references.videoReference', '视频参考图')} />
                     <button type="button" onClick={removeVideoReferenceImage} aria-label={t('references.remove', '移除参考图')}>
                       <X size={13} />
                     </button>
@@ -6203,7 +7308,7 @@ function CreationDesk({
           {mode === 'video' ? (
             <>
                 <label className="controlField modelField">
-                  <span>视频模型</span>
+                  <span>{t('params.videoModel', '视频模型')}</span>
                   <select value={hasVideoModels ? videoModel : ''} onChange={(event) => setVideoModel(event.target.value)} disabled={!hasVideoModels}>
                     {hasVideoModels ? videoModelOptions.map((item) => <option key={item.id} value={item.id}>{item.label || item.id}</option>) : (
                       <option value="">{t('params.currentKeyNoVideo', '当前 Key 未开放视频模型')}</option>
@@ -6211,7 +7316,7 @@ function CreationDesk({
                   </select>
                 </label>
               <div className="controlField">
-                <span>时长</span>
+                <span>{t('params.duration', '时长')}</span>
                 <div className="optionSegment durationSegment">
                   {VIDEO_DURATIONS.map((item) => (
                     <button type="button" className={videoDuration === item ? 'active' : ''} key={item} onClick={() => setVideoDuration(item)}>
@@ -6221,7 +7326,7 @@ function CreationDesk({
                 </div>
               </div>
               <div className="controlField wideControl">
-                <span>视频比例</span>
+                <span>{t('params.videoAspect', '视频比例')}</span>
                 <div className="optionSegment videoSizeSegment">
                   {VIDEO_ASPECT_OPTIONS.map((item) => (
                     <button type="button" className={videoAspect === item.value ? 'active' : ''} key={item.value} onClick={() => setVideoAspect(item.value)}>
@@ -6231,7 +7336,7 @@ function CreationDesk({
                 </div>
               </div>
               <div className="controlField">
-                <span>帧率</span>
+                <span>{t('params.fps', '帧率')}</span>
                 <div className="optionSegment fpsSegment">
                   {VIDEO_FPS_OPTIONS.map((item) => (
                     <button type="button" className={videoFps === item ? 'active' : ''} key={item} onClick={() => setVideoFps(item)}>
@@ -6241,11 +7346,11 @@ function CreationDesk({
                 </div>
               </div>
               <div className="controlField videoSpecField">
-                <span>输出</span>
+                <span>{t('params.output', '输出')}</span>
                 <strong>{videoSize.width} x {videoSize.height}</strong>
               </div>
               <div className="controlField wideControl">
-                <span>镜头运动</span>
+                <span>{t('params.motion', '镜头运动')}</span>
                 <div className="optionSegment motionSegment">
                   {VIDEO_MOTIONS.map((item) => (
                     <button type="button" className={videoMotion === item.value ? 'active' : ''} key={item.value} onClick={() => setVideoMotion(item.value)}>
@@ -6255,7 +7360,7 @@ function CreationDesk({
                 </div>
               </div>
               <div className="controlField">
-                <span>风格</span>
+                <span>{t('params.style', '风格')}</span>
                 <div className="optionSegment videoStyleSegment">
                   {VIDEO_STYLES.map((item) => (
                     <button type="button" className={videoStyle === item.value ? 'active' : ''} key={item.value} onClick={() => setVideoStyle(item.value)}>
@@ -6265,7 +7370,7 @@ function CreationDesk({
                 </div>
               </div>
               <div className="controlField">
-                <span>视频画质</span>
+                <span>{t('params.videoQuality', '视频画质')}</span>
                 <div className="optionSegment videoQualitySegment">
                   {VIDEO_QUALITY.map((item) => (
                     <button type="button" className={videoQuality === item ? 'active' : ''} key={item} onClick={() => setVideoQuality(item)}>
@@ -6275,39 +7380,39 @@ function CreationDesk({
                 </div>
               </div>
               <label className="controlField wideControl negativePromptField">
-                <span>负面提示词</span>
+                <span>{t('params.negativePrompt', '负面提示词')}</span>
                 <input
                   value={negativePrompt}
                   onChange={(event) => setNegativePrompt(event.target.value)}
-                  placeholder="例如：不要字幕、水印、畸变、闪烁、手部变形"
+                  placeholder={t('params.negativePromptPlaceholder', '例如：不要字幕、水印、畸变、闪烁、手部变形')}
                 />
               </label>
             </>
           ) : (
             <>
               <label className="controlField modelField">
-                <span>图片模型</span>
+                <span>{t('params.imageModel', '图片模型')}</span>
                 <select value={model} onChange={(event) => setModel(event.target.value)}>
                   {imageModelOptions.map((item) => <option key={item.id} value={item.id}>{item.label || item.id}</option>)}
                 </select>
               </label>
               <div className="controlField countField">
                 <div className="fieldHead">
-                  <span>图片数量</span>
+                  <span>{t('params.imageCount', '图片数量')}</span>
                   <strong>{countValue}</strong>
                 </div>
                 <input
                   type="range"
-                  min="1"
-                  max="10"
+                  min={imageCountRange.min}
+                  max={imageCountRange.max}
                   value={countValue}
-                  onChange={(event) => setCount(normalizeCount(event.target.value))}
+                  onChange={(event) => setCount(clampCountForProvider(event.target.value, currentImageProvider))}
                 />
               </div>
               <div className="controlField wideControl">
-                <span>尺寸比例</span>
+                <span>{t('params.aspect', '尺寸比例')}</span>
                 <div className="optionSegment sizeSegment">
-                  {ASPECT_OPTIONS.map((item) => (
+                  {imageAspectOptions.map((item) => (
                     <button
                       type="button"
                       className={aspect === item.value ? 'active' : ''}
@@ -6323,17 +7428,17 @@ function CreationDesk({
                 </div>
                 {aspect === 'custom' ? (
                   <>
-                    <select className="compactSelect" aria-label="接口尺寸" value={customSize} onChange={(event) => setCustomSize(normalizeSize(event.target.value))}>
-                      {CUSTOM_SIZE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{customSizeLabel(item)}</option>)}
+                    <select className="compactSelect" aria-label={t('params.apiSize', '接口尺寸')} value={customSize} onChange={(event) => setCustomSize(normalizeSize(event.target.value))}>
+                      {customSizeOptions.map((item) => <option key={item.value} value={item.value}>{customSizeLabel(item)}</option>)}
                     </select>
                     <small className="sizeLimitHint">{t('params.sizeHint', '这里是当前模型支持的 size 枚举；2K/4K 会写进提示词作为目标清晰度。')}</small>
                   </>
                 ) : null}
               </div>
               <div className="controlField">
-                <span>画质</span>
+                <span>{t('params.quality', '质量')}</span>
                 <div className="optionSegment qualitySegment">
-                  {QUALITY.filter((item) => item !== 'auto').map((item) => (
+                  {imageQualityOptions.map((item) => (
                     <button type="button" className={quality === item ? 'active' : ''} key={item} onClick={() => setQuality(item)}>
                       {qualityLabel(item)}
                     </button>
@@ -6341,9 +7446,9 @@ function CreationDesk({
                 </div>
               </div>
               <div className="controlField">
-                <span>分辨率</span>
+                <span>{t('params.resolution', '分辨率')}</span>
                 <div className="optionSegment resolutionSegment">
-                  {RESOLUTION_TIERS.map((item) => (
+                  {imageResolutionTierOptions.map((item) => (
                     <button type="button" className={resolutionTier === item.value ? 'active' : ''} key={item.value} onClick={() => setResolutionTier(item.value)}>
                       {resolutionTierLabel(item)}
                     </button>
@@ -6351,9 +7456,9 @@ function CreationDesk({
                 </div>
               </div>
               <div className="controlField">
-                <span>格式</span>
+                <span>{t('params.format', '格式')}</span>
                 <div className="optionSegment formatSegment">
-                  {OUTPUT_FORMATS.map((item) => (
+                  {imageOutputFormatOptions.map((item) => (
                     <button type="button" className={outputFormat === item ? 'active' : ''} key={item} onClick={() => setOutputFormat(item)}>
                       {OUTPUT_FORMAT_LABELS[item] || item}
                     </button>
@@ -6361,7 +7466,7 @@ function CreationDesk({
                 </div>
               </div>
               <div className="controlField">
-                <span>审核</span>
+                <span>{t('params.moderation', '审核')}</span>
                 <div className="optionSegment moderationSegment">
                   {MODERATION.map((item) => (
                     <button type="button" className={moderation === item ? 'active' : ''} key={item} onClick={() => setModeration(item)}>
@@ -6422,57 +7527,58 @@ function CreationDesk({
           <span>{hasPrimaryResult ? t('composer.resultCount', '共 {count} 张', { count: mode === 'video' ? videoResults.length : results.length }) : t('composer.pending', '待生成')}</span>
         </div>
         {mode === 'video' ? (
-          <VideoResultGrid urls={videoResults} downloadMeta={currentDownloadMeta} onPreview={(url, index) => setPreviewVideo({ url, index })} />
+          <VideoResultGrid urls={videoResults} downloadMeta={currentDownloadMeta} onPreview={(url, index) => setPreviewVideo({ url, index })} t={t} />
         ) : (
-          <ResultGrid urls={results} outputFormat={outputFormat} downloadMeta={currentDownloadMeta} onPreview={(url, index) => setPreviewImage({ url, index })} />
+          <ResultGrid urls={results} outputFormat={outputFormat} downloadMeta={currentDownloadMeta} onPreview={(url, index) => setPreviewImage({ url, index })} t={t} />
         )}
       </section>
-      <div className={`bottomComposerBar ${selectedCanvasNode ? 'hasLineage' : ''} ${layoutSections.bottomComposer && assistantMessages.length ? 'hasThread' : ''} ${layoutSections.composerParameters === false ? 'paramsCollapsed' : 'paramsExpanded'}`}>
+      <div className={`bottomComposerBar ${selectedCanvasNode ? 'hasLineage' : ''} ${layoutSections.bottomComposer && composerThreadHasContent ? 'hasThread' : 'noThread'} ${layoutSections.composerParameters === false ? 'paramsCollapsed' : 'paramsExpanded'} ${composerFolded ? 'isFolded' : 'isExpandedComposer'} noReferences`}>
         <div className="composerPanelHead">
-          <button
-            type="button"
-            className={`bottomComposerToggle ${layoutSections.bottomComposer ? 'isOpen' : 'isClosed'}`}
-            onClick={() => toggleLayoutSection('bottomComposer')}
-            aria-label={layoutSections.bottomComposer ? t('composer.collapse', '收起对话') : t('composer.expand', '展开对话')}
-            title={layoutSections.bottomComposer ? t('composer.collapse', '收起对话') : t('composer.expand', '展开对话')}
-          >
-            {layoutSections.bottomComposer ? <PanelLeftClose size={15} /> : <PanelLeftOpen size={15} />}
-          </button>
-          <div className="composerPanelTitle">
-            <strong>{t('composer.conversation', '创作会话')}</strong>
-            <span>{selectedCanvasNode ? t('composer.selected', '基于画布 #{index}', { index: selectedCanvasNode.canvasIndex || '' }) : t('composer.defaultTitle', '提示词优化与生成')}</span>
+          <div className="composerSessionIdentity">
+            <span className="composerSessionIcon"><Sparkles size={17} /></span>
+            <div className="composerPanelTitle">
+              <strong>{t('composer.conversation', '创作会话')}</strong>
+              <span>
+                {selectedCanvasNode ? t('composer.selected', '基于画布 #{index}', { index: selectedCanvasNode.canvasIndex || '' }) : t('composer.defaultTitle', '提示词优化与生成')}
+                <em>{composerRouteLabel}</em>
+              </span>
+            </div>
           </div>
           {layoutSections.bottomComposer ? (
-            <div className="composerSessionContext">
-              <span>{composerContextTitle}</span>
-              <em>{composerRouteLabel}</em>
-              {selectedCanvasNode ? (
-                <button type="button" onClick={() => setSelectedCanvasNodeId('')}>
-                  {t('composer.asNewWork', '作为新作品')}
-                </button>
-              ) : null}
+            <div className="composerHeaderActions">
+              <button
+                type="button"
+                className="composerIconPill"
+                onClick={toggleComposerFold}
+                aria-label={composerFolded ? t('composer.expandPanel', '展开对话面板') : t('composer.foldPanel', '折叠对话面板')}
+                title={composerFolded ? t('composer.expandPanel', '展开对话面板') : t('composer.foldPanel', '折叠对话面板')}
+              >
+                {composerFolded ? <Maximize2 size={15} /> : <ArrowDown size={15} />}
+              </button>
+              <button
+                type="button"
+                className="composerIconPill"
+                onClick={() => toggleLayoutSection('bottomComposer')}
+                aria-label={t('composer.collapse', '收起对话')}
+                title={t('composer.collapse', '收起对话')}
+              >
+                <X size={16} />
+              </button>
             </div>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              className={`bottomComposerToggle ${layoutSections.bottomComposer ? 'isOpen' : 'isClosed'}`}
+              onClick={() => toggleLayoutSection('bottomComposer')}
+              aria-label={t('composer.expand', '展开对话')}
+              title={t('composer.expand', '展开对话')}
+            >
+              <PanelLeftOpen size={15} />
+            </button>
+          )}
         </div>
-        {layoutSections.bottomComposer ? (
-          <div className="composerThread" ref={composerThreadRef} aria-label={t('composer.aiThread', 'AI 对话记录')}>
-            {generationQueue.length ? (
-              <div className="composerQueuePanel" aria-label={t('composer.queue', '生成队列')}>
-                <div className="composerQueueHead">
-                  <strong>{t('composer.queue', '生成队列')}</strong>
-                  <span>{runningQueueItem ? t('composer.queueRunning', '1 个生成中') : t('composer.queueIdle', '当前空闲')} · {t('composer.queueWaiting', '{count} 个排队', { count: queuedGenerationCount })}</span>
-                </div>
-                <div className="composerQueueList">
-                  {generationQueue.slice(-5).map((item, index) => (
-                    <div className={`composerQueueItem ${item.status}`} key={item.id}>
-                      <b>#{index + 1}</b>
-                      <span>{generationQueueStatusLabel(item.status)}</span>
-                      <p>{item.summary}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
+        {layoutSections.bottomComposer && !composerFolded ? (
+          <div className={`composerThread ${composerThreadHasContent ? '' : 'isEmpty'}`} ref={composerThreadRef} aria-label={t('composer.aiThread', 'AI 对话记录')}>
             {composerGenerationVisible ? (
               <div className={`composerGenerationCard ${status} ${progress.stage === 'pending_review' ? 'pendingReview' : ''}`}>
                 <div className="composerGenerationHead">
@@ -6497,27 +7603,53 @@ function CreationDesk({
                 <p>{item.content}</p>
                 {item.finalPrompt ? <button type="button" onClick={() => setPrompt(item.finalPrompt)}>{t('composer.putIntoInput', '放入输入框')}</button> : null}
               </div>
-            )) : (
-              <div className="composerEmptyThread">
-                <MessageSquareText size={18} />
-                <strong>{t('composer.title', '把想法说出来，先整理，再生成')}</strong>
-                <span>{t('composer.example', '例如：基于 #1 保留人物，换成清晨城市背景，画面更安静。')}</span>
-              </div>
-            )}
+            )) : null}
             <PromptSuggestion
               suggestion={promptSuggestion}
               onMerge={mergeSuggestion}
               onReplace={replaceSuggestion}
               onCopy={copySuggestion}
               onUse={useSuggestionForGenerate}
+              t={t}
             />
           </div>
         ) : null}
-        <div className="composerPromptRow">
+        <div
+          className={`composerPromptRow ${referenceDropActive || videoDropActive ? 'isDroppingReference' : ''}`}
+          onDragEnter={(event) => {
+            if (!supportedReferenceFiles(event.dataTransfer?.files || event.dataTransfer?.items, mode === 'video' ? 1 : IMAGE_REFERENCE_LIMIT).length) return;
+            event.preventDefault();
+            if (mode === 'video') setVideoDropActive(true);
+            else setReferenceDropActive(true);
+          }}
+          onDragOver={(event) => {
+            if (!supportedReferenceFiles(event.dataTransfer?.files || event.dataTransfer?.items, mode === 'video' ? 1 : IMAGE_REFERENCE_LIMIT).length) return;
+            event.preventDefault();
+            if (mode === 'video') setVideoDropActive(true);
+            else setReferenceDropActive(true);
+          }}
+          onDragLeave={() => {
+            setReferenceDropActive(false);
+            setVideoDropActive(false);
+          }}
+          onDrop={(event) => {
+            const files = supportedReferenceFiles(event.dataTransfer?.files, mode === 'video' ? 1 : IMAGE_REFERENCE_LIMIT);
+            if (!files.length) return;
+            event.preventDefault();
+            setReferenceDropActive(false);
+            setVideoDropActive(false);
+            if (mode === 'video') appendVideoReferenceImage(files);
+            else appendReferenceImages(files);
+          }}
+        >
           <label className="bottomComposerInput">
             <textarea
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
+              onPaste={(event) => {
+                if (mode === 'video') videoReferencePasteFiles(event);
+                else referencePasteFiles(event);
+              }}
               onFocus={() => {
                 if (!layoutSections.bottomComposer) toggleLayoutSection('bottomComposer');
               }}
@@ -6558,13 +7690,13 @@ function CreationDesk({
             </button>
           </div>
         </div>
-        {layoutSections.bottomComposer ? (
+        {layoutSections.bottomComposer && !composerFolded ? (
           <div className={`composerParamShelf ${layoutSections.composerParameters === false ? 'isCollapsed' : 'isExpanded'}`} aria-label={t('params.current', '当前参数')}>
             {layoutSections.composerParameters === false ? (
               <button
                 type="button"
                 className="composerParamSummary"
-                onClick={() => toggleLayoutSection('composerParameters')}
+                onClick={() => updateLayoutSections({ composerFolded: false, composerParameters: true })}
                 aria-label={t('params.expand', '展开参数')}
                 aria-expanded="false"
                 title={t('params.expand', '展开参数')}
@@ -6633,7 +7765,7 @@ function CreationDesk({
                 </div>
               ) : (
                 <div className="composerMiniSegment">
-                  {ASPECT_OPTIONS.map((item) => (
+                  {imageAspectOptions.map((item) => (
                     <button
                       type="button"
                       className={aspect === item.value ? 'active' : ''}
@@ -6661,14 +7793,14 @@ function CreationDesk({
               ) : (
                 <>
                 <div className="composerMiniSegment">
-                  {QUALITY.filter((item) => item !== 'auto').map((item) => (
+                  {imageQualityOptions.map((item) => (
                     <button type="button" className={quality === item ? 'active' : ''} key={item} onClick={() => setQuality(item)}>
                       {qualityLabel(item)}
                     </button>
                   ))}
                 </div>
                 <div className="composerMiniSegment">
-                  {RESOLUTION_TIERS.map((item) => (
+                  {imageResolutionTierOptions.map((item) => (
                     <button type="button" className={resolutionTier === item.value ? 'active' : ''} key={item.value} onClick={() => setResolutionTier(item.value)}>
                       {resolutionTierLabel(item)}
                     </button>
@@ -6676,12 +7808,23 @@ function CreationDesk({
                 </div>
                 <label className="composerCountField">
                   <span>{t('params.count', '数量')}</span>
-                  <input type="range" min="1" max="10" value={countValue} onChange={(event) => setCount(normalizeCount(event.target.value))} />
+                  <input type="range" min={imageCountRange.min} max={imageCountRange.max} value={countValue} onChange={(event) => setCount(clampCountForProvider(event.target.value, currentImageProvider))} />
                   <strong>{countValue}</strong>
                 </label>
                 </>
               )}
             </div>
+            <button
+              type="button"
+              className="composerReferenceParamButton"
+              onClick={() => toggleLayoutSection('references')}
+              aria-label={layoutSections.references ? t('references.collapse', '收起参考图') : t('references.title', '参考图')}
+              title={layoutSections.references ? t('references.collapse', '收起参考图') : t('references.title', '参考图')}
+            >
+              <Images size={15} />
+              <span>{t('references.title', '参考图')}</span>
+              <em>{mode === 'video' ? videoReferenceFiles.length : referenceFiles.length}</em>
+            </button>
               </>
             )}
           </div>
@@ -6709,23 +7852,23 @@ function CreationDesk({
             </>
           )}
         </button>
-        <button type="button" className={activeParamPanel === 'model' ? 'active' : ''} onClick={() => openParamPanel('model')}>
+        <button type="button" className={activeParamPanel === 'model' ? 'active' : ''} onClick={() => openParamPanel('model')} aria-label={t('params.model', '模型')} title={t('params.model', '模型')}>
           <Server size={18} />
           <span>{t('params.model', '模型')}</span>
         </button>
-        <button type="button" className={activeParamPanel === 'size' ? 'active' : ''} onClick={() => openParamPanel('size')}>
+        <button type="button" className={activeParamPanel === 'size' ? 'active' : ''} onClick={() => openParamPanel('size')} aria-label={t('params.size', '尺寸')} title={t('params.size', '尺寸')}>
           <ScanLine size={18} />
           <span>{t('params.size', '尺寸')}</span>
         </button>
-        <button type="button" className={activeParamPanel === 'quality' ? 'active' : ''} onClick={() => openParamPanel('quality')}>
+        <button type="button" className={activeParamPanel === 'quality' ? 'active' : ''} onClick={() => openParamPanel('quality')} aria-label={t('params.quality', '质量')} title={t('params.quality', '质量')}>
           <span className="paramRailBadge">HD</span>
           <span>{t('params.quality', '质量')}</span>
         </button>
-        <button type="button" className={activeParamPanel === 'count' ? 'active' : ''} onClick={() => openParamPanel('count')}>
+        <button type="button" className={activeParamPanel === 'count' ? 'active' : ''} onClick={() => openParamPanel('count')} aria-label={t('params.count', '数量')} title={t('params.count', '数量')}>
           <Images size={18} />
           <span>{t('params.count', '数量')}</span>
         </button>
-        <button type="button" className={`paramGenerateAction ${generationActionClass}`} onClick={handleGenerateAction} disabled={generationActionDisabled}>
+        <button type="button" className={`paramGenerateAction ${generationActionClass}`} onClick={handleGenerateAction} disabled={generationActionDisabled} aria-label={generationActionLabel} title={generationActionLabel}>
           {generationActionIcon}
           <span>{generationActionLabel}</span>
         </button>
@@ -6778,7 +7921,7 @@ function CreationDesk({
               ) : (
                 <>
                   <div className="paramSegment">
-                    {ASPECT_OPTIONS.map((item) => (
+                    {imageAspectOptions.map((item) => (
                       <button
                         type="button"
                         className={aspect === item.value ? 'active' : ''}
@@ -6796,7 +7939,7 @@ function CreationDesk({
                     <label className="paramField">
                       <span>{t('params.apiSize', '接口尺寸')}</span>
                       <select value={customSize} onChange={(event) => setCustomSize(normalizeSize(event.target.value))}>
-                        {CUSTOM_SIZE_OPTIONS.map((item) => <option key={item.value} value={item.value}>{customSizeLabel(item)}</option>)}
+                        {customSizeOptions.map((item) => <option key={item.value} value={item.value}>{customSizeLabel(item)}</option>)}
                       </select>
                     </label>
                   ) : null}
@@ -6818,14 +7961,14 @@ function CreationDesk({
               ) : (
                 <>
                   <div className="paramSegment">
-                    {QUALITY.filter((item) => item !== 'auto').map((item) => (
+                    {imageQualityOptions.map((item) => (
                       <button type="button" className={quality === item ? 'active' : ''} key={item} onClick={() => setQuality(item)}>
                         {qualityLabel(item)}
                       </button>
                     ))}
                   </div>
                   <div className="paramSegment">
-                    {RESOLUTION_TIERS.map((item) => (
+                    {imageResolutionTierOptions.map((item) => (
                       <button type="button" className={resolutionTier === item.value ? 'active' : ''} key={item.value} onClick={() => setResolutionTier(item.value)}>
                         {resolutionTierLabel(item)}
                       </button>
@@ -6856,10 +7999,10 @@ function CreationDesk({
                   <label className="paramRange">
                     <span>{t('params.imageCount', '图片数量')}</span>
                     <strong>{countValue}</strong>
-                    <input type="range" min="1" max="10" value={countValue} onChange={(event) => setCount(normalizeCount(event.target.value))} />
+                    <input type="range" min={imageCountRange.min} max={imageCountRange.max} value={countValue} onChange={(event) => setCount(clampCountForProvider(event.target.value, currentImageProvider))} />
                   </label>
                   <div className="paramSegment">
-                    {OUTPUT_FORMATS.map((item) => (
+                    {imageOutputFormatOptions.map((item) => (
                       <button type="button" className={outputFormat === item ? 'active' : ''} key={item} onClick={() => setOutputFormat(item)}>{OUTPUT_FORMAT_LABELS[item] || item}</button>
                     ))}
                   </div>
@@ -6907,7 +8050,14 @@ function SettingsPanel({
 }) {
   if (!open) return null;
 
-  const sub2ApiDisabled = providerSettings.apiKeySource === 'manual';
+  const gatewayAccountDisabled = providerSettings.apiKeySource === 'manual';
+  const currentProvider = getImageProvider(providerSettings.providerId, providerSettings.apiKeySource);
+  const providerCapabilityText = [
+    currentProvider?.capabilities?.textToImage ? t('settings.capTextToImage', '生图') : '',
+    currentProvider?.capabilities?.imageEdit ? t('settings.capEdit', '编辑') : '',
+    currentProvider?.capabilities?.mask ? 'Mask' : '',
+    currentProvider?.capabilities?.modelSync ? t('settings.capModelSync', '模型同步') : ''
+  ].filter(Boolean).join(' · ');
   const modelSyncLabel = modelsStatus === 'loading'
     ? t('settings.modelsSyncing', '正在从上游同步模型')
     : modelsStatus === 'ready'
@@ -6920,6 +8070,14 @@ function SettingsPanel({
     responses: modelOptions.responses?.length || 0,
     video: modelOptions.video?.length || 0
   });
+  const providerChoiceOrder = ['gateway-account', 'openai-compatible', 'newapi-compatible', 'nano-banana-compatible', 'video-compatible'];
+  const providerChoices = [...IMAGE_PROVIDER_REGISTRY]
+    .sort((left, right) => providerChoiceOrder.indexOf(left.id) - providerChoiceOrder.indexOf(right.id))
+    .map((provider) => ({
+      ...provider,
+      active: provider.id === currentProvider?.id,
+      nextApiKeySource: provider.authMode
+    }));
 
   return (
     <div className="settingsOverlay" onMouseDown={(event) => {
@@ -6931,27 +8089,71 @@ function SettingsPanel({
           <button type="button" className="iconButton" onClick={onClose} aria-label={t('settings.close', '关闭')}>×</button>
         </div>
 
-        <div className="settingsGroup">
+        <div className="settingsGroup providerSettingsGroup">
+          <label className="settingsSelectField">
+            <small>{t('settings.providerFamily', '接口类型')}</small>
+            <select
+              value={currentProvider?.id || providerSettings.providerId}
+              onChange={(event) => {
+                const nextProvider = providerChoices.find((provider) => provider.id === event.target.value) || providerChoices[0];
+                onProviderChange({
+                  ...providerSettings,
+                  apiKeySource: nextProvider.nextApiKeySource,
+                  providerId: nextProvider.id
+                });
+              }}
+            >
+              {providerChoices.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.label} · {provider.authMode === 'manual' ? t('settings.providerManual', '手动密钥') : t('settings.providerGateway', '网关账号')}
+                </option>
+              ))}
+            </select>
+          </label>
           <span>{t('settings.key', '密钥')}</span>
-          <div className="segmentedControl">
+          <div className="providerChoiceGrid" role="group" aria-label={t('settings.providerFamily', '接口类型')}>
+            {providerChoices.map((provider) => (
+              <button
+                type="button"
+                className={provider.active ? 'active' : ''}
+                key={provider.id}
+                onClick={() => onProviderChange({
+                  ...providerSettings,
+                  apiKeySource: provider.nextApiKeySource,
+                  providerId: provider.id
+                })}
+              >
+                <strong>{provider.label}</strong>
+                <em>{provider.authMode === 'manual' ? t('settings.providerManual', '手动密钥') : t('settings.providerGateway', '网关账号')}</em>
+              </button>
+            ))}
+          </div>
+          <div className="segmentedControl legacyProviderToggle">
             <button
               type="button"
-              className={providerSettings.apiKeySource === 'sub2api' ? 'active' : ''}
-              onClick={() => onProviderChange({ ...providerSettings, apiKeySource: 'sub2api' })}
+              className={usesGatewayAccount(providerSettings) ? 'active' : ''}
+              onClick={() => onProviderChange({ ...providerSettings, apiKeySource: 'gateway', providerId: 'gateway-account' })}
             >
-              Sub2API
+              Gateway
             </button>
             <button
               type="button"
               className={providerSettings.apiKeySource === 'manual' ? 'active' : ''}
-              onClick={() => onProviderChange({ ...providerSettings, apiKeySource: 'manual' })}
+              onClick={() => onProviderChange({ ...providerSettings, apiKeySource: 'manual', providerId: 'openai-compatible' })}
             >
               {t('settings.custom', '自定义')}
             </button>
           </div>
         </div>
 
-        {providerSettings.apiKeySource === 'sub2api' ? (
+        <div className="providerSummary">
+          <span>{t('settings.provider', 'Provider')}</span>
+          <strong>{currentProvider?.label || providerSettings.providerId || 'Gateway Account'}</strong>
+          <em>{currentProvider?.authMode === 'manual' ? t('settings.providerManual', '手动密钥') : t('settings.providerGateway', '网关账号')}</em>
+          <small>{providerCapabilityText || t('settings.providerCompatible', 'OpenAI 兼容接口')}</small>
+        </div>
+
+        {usesGatewayAccount(providerSettings) ? (
           <div className="keyList">
             {isAuthenticated ? keys.map((item) => (
               <button type="button" className={item.id === apiKey?.id ? 'active' : ''} key={item.id} onClick={() => onSelectKey(item)}>
@@ -6993,6 +8195,30 @@ function SettingsPanel({
 
         <div className="manualFields">
           <p className="settingsHint">{t('settings.hint', '接口会自动选择：普通生图走 /v1/images/generations；参考图编辑和 Mask 走 /v1/images/edits。助手模型只用于底部提示词优化，会消耗当前 Key 额度。')}</p>
+          <div className="settingsCallConfig">
+            <div className="settingsCallConfigHead">
+              <strong>{t('settings.modelCallSettings', '模型调用设置')}</strong>
+              <span>{t('settings.modelCallHint', '为生图、编辑、视频和提示词助手预留不同模型；例如 nano-banana、gpt-image-2、veo3。')}</span>
+            </div>
+            <div className="settingsCallGrid">
+              <label>
+                <span>{t('settings.imageGenerationModel', '生图模型')}</span>
+                <input value={providerSettings.imageGenerationModel || ''} onChange={(event) => onProviderChange({ ...providerSettings, imageGenerationModel: event.target.value })} placeholder="gpt-image-2 / nano-banana" />
+              </label>
+              <label>
+                <span>{t('settings.imageEditModel', '编辑 / Mask 模型')}</span>
+                <input value={providerSettings.imageEditModel || ''} onChange={(event) => onProviderChange({ ...providerSettings, imageEditModel: event.target.value })} placeholder={providerSettings.imageGenerationModel || 'gpt-image-2'} />
+              </label>
+              <label>
+                <span>{t('settings.videoModel', '视频模型')}</span>
+                <input value={providerSettings.videoModel || ''} onChange={(event) => onProviderChange({ ...providerSettings, videoModel: event.target.value })} placeholder="veo3 / kling / runway" />
+              </label>
+              <label>
+                <span>{t('settings.videoGateway', '视频接口 URL')}</span>
+                <input value={providerSettings.videoGatewayBaseUrl || ''} onChange={(event) => onProviderChange({ ...providerSettings, videoGatewayBaseUrl: event.target.value })} placeholder={providerSettings.manualGatewayBaseUrl || getConfiguredBaseUrls().gatewayBaseUrl} />
+              </label>
+            </div>
+          </div>
           <div className={`settingsModelSync ${modelsStatus}`}>
             <span>{modelSyncLabel}</span>
             <em>{modelSyncMeta}</em>
@@ -7022,7 +8248,8 @@ function SettingsPanel({
             ...providerSettings,
             manualApiKey: '',
             manualGatewayBaseUrl: '',
-            apiKeySource: sub2ApiDisabled ? 'manual' : 'sub2api'
+            apiKeySource: gatewayAccountDisabled ? 'manual' : 'gateway',
+            providerId: gatewayAccountDisabled ? 'openai-compatible' : 'gateway-account'
           })}>
             {t('settings.clear', '清除')}
           </button>
@@ -7034,11 +8261,12 @@ function SettingsPanel({
 }
 
 function StudioApp() {
+  const initialCurrentSession = useMemo(() => loadCurrentSession(), []);
   const [siteData, setSiteData] = useState(null);
   const [session, setSession] = useState(() => loadSession());
   const [profile, setProfile] = useState(() => loadSession()?.user || null);
   const [providerSettings, setProviderSettings] = useState(() => loadProviderSettings());
-  const [client, setClient] = useState(() => new Sub2ApiClient({ session: loadSession(), providerSettings: loadProviderSettings() }));
+  const [client, setClient] = useState(() => new AiGatewayClient({ session: loadSession(), providerSettings: loadProviderSettings() }));
   const [apiKey, setApiKey] = useState(null);
   const [keys, setKeys] = useState([]);
   const [selectedCase, setSelectedCase] = useState(null);
@@ -7059,16 +8287,17 @@ function StudioApp() {
   const [theme, setTheme] = useState(() => loadTheme());
   const [language, setLanguage] = useState(() => loadStudioLanguage());
   const [railCollapsed, setRailCollapsed] = useState(false);
-  const [activeWorkspace, setActiveWorkspace] = useState('image');
+  const [activeWorkspace, setActiveWorkspace] = useState(() => initialCurrentSession?.mode === 'video' ? 'video' : 'image');
   const [appendTemplateRequest, setAppendTemplateRequest] = useState(null);
   const [remoteSession, setRemoteSession] = useState(null);
   const [remoteSessionReady, setRemoteSessionReady] = useState(() => !loadSession()?.accessToken);
-  const [currentSessionSnapshot, setCurrentSessionSnapshot] = useState(() => loadCurrentSession());
-  const [deskSessionId, setDeskSessionId] = useState(() => loadCurrentSession()?.sessionId || `desk-${Date.now()}`);
+  const [currentSessionSnapshot, setCurrentSessionSnapshot] = useState(() => initialCurrentSession);
+  const [deskSessionId, setDeskSessionId] = useState(() => initialCurrentSession?.sessionId || `desk-${Date.now()}`);
   const [canvasFocusSignal, setCanvasFocusSignal] = useState(0);
   const sessionSaveRef = useRef({ timer: null, lastPayload: '' });
   const isLibraryLocked = LIBRARY_AUTH_REQUIRED && !session?.accessToken;
   const t = useMemo(() => createTranslator(language), [language]);
+  const persistenceKey = session?.accessToken || 'local-workspace';
 
   function historyScope() {
     return historyScopeFromIdentity(session, profile);
@@ -7086,7 +8315,7 @@ function StudioApp() {
       return false;
     }
 
-    const nextClient = new Sub2ApiClient({ session: nextSession, providerSettings });
+    const nextClient = new AiGatewayClient({ session: nextSession, providerSettings });
     try {
       const nextProfile = await nextClient.profile().catch(() => nextClient.me());
       setClient(nextClient);
@@ -7209,7 +8438,7 @@ function StudioApp() {
   useEffect(() => {
     if (!session?.accessToken) return;
     let active = true;
-    const nextClient = new Sub2ApiClient({ session, providerSettings });
+    const nextClient = new AiGatewayClient({ session, providerSettings });
     setClient(nextClient);
     Promise.all([
       nextClient.profile().catch(() => nextClient.me()),
@@ -7239,7 +8468,7 @@ function StudioApp() {
     }
 
     const controller = new AbortController();
-    const nextClient = new Sub2ApiClient({ session, providerSettings });
+    const nextClient = new AiGatewayClient({ session, providerSettings });
     setModelsStatus('loading');
       nextClient.listGatewayModels({ ...providerRequest, signal: controller.signal })
       .then((models) => {
@@ -7274,6 +8503,7 @@ function StudioApp() {
 
     return () => controller.abort();
   }, [
+    providerSettings.providerId,
     providerSettings.apiKeySource,
     providerSettings.manualApiKey,
     providerSettings.manualGatewayBaseUrl,
@@ -7282,34 +8512,37 @@ function StudioApp() {
   ]);
 
   useEffect(() => {
-    if (!session?.accessToken) return;
     let active = true;
     const historyClient = new StudioHistoryClient({ session });
     const scope = historyScope();
     setHistoryStatus('loading');
     setHistoryNextOffset(null);
-    historyClient.listRecords({ limit: HISTORY_PAGE_SIZE })
-      .then(({ records, nextOffset }) => {
+    Promise.all([
+      historyClient.listRecords({ limit: HISTORY_PAGE_SIZE }),
+      loadPersistedHistory(scope)
+    ])
+      .then(([{ records, nextOffset }, localRecords]) => {
         if (!active) return;
-        const merged = mergeHistoryRecords(records, loadHistory(scope));
+        const merged = mergeHistoryRecords(records, localRecords);
         setHistoryItems(merged);
         saveHistory(merged, scope);
         setHistoryNextOffset(nextOffset);
         setHistoryStatus('synced');
       })
-      .catch(() => {
+      .catch(async () => {
         if (!active) return;
-        const localRecords = loadHistory(scope);
+        const localRecords = await loadPersistedHistory(scope);
+        if (!active) return;
         setHistoryItems(localRecords);
         setHistoryStatus(localRecords.length ? 'local' : 'idle');
       });
     return () => {
       active = false;
     };
-  }, [session?.accessToken, profile?.id, profile?.email, profile?.username]);
+  }, [persistenceKey, profile?.id, profile?.email, profile?.username]);
 
   function handleLoadMoreHistory() {
-    if (!session?.accessToken || historyNextOffset === null || historyLoadingMore) return;
+    if (historyNextOffset === null || historyLoadingMore) return;
     const historyClient = new StudioHistoryClient({ session });
     const scope = historyScope();
     setHistoryLoadingMore(true);
@@ -7326,11 +8559,6 @@ function StudioApp() {
   }
 
   useEffect(() => {
-    if (!session?.accessToken) {
-      setRemoteSession(null);
-      setRemoteSessionReady(true);
-      return;
-    }
     let active = true;
     setRemoteSessionReady(false);
     const historyClient = new StudioHistoryClient({ session });
@@ -7353,7 +8581,7 @@ function StudioApp() {
     return () => {
       active = false;
     };
-  }, [session?.accessToken, profile?.id, profile?.email, profile?.username]);
+  }, [persistenceKey, profile?.id, profile?.email, profile?.username]);
 
   const categoryGroups = useMemo(() => buildCategoryGroups(siteData?.cases || []), [siteData]);
   const visibleCases = useMemo(() => {
@@ -7375,11 +8603,11 @@ function StudioApp() {
   const workspaceIsDesk = activeWorkspace === 'image' || activeWorkspace === 'video';
   const currentProject = useMemo(() => currentSessionProject(currentSessionSnapshot || remoteSession), [currentSessionSnapshot, remoteSession]);
 
-  function handleWorkspaceChange(nextWorkspace) {
+  function handleWorkspaceChange(nextWorkspace, options = {}) {
     setActiveWorkspace(nextWorkspace);
     setQuery('');
     setCategory('All');
-    if (nextWorkspace !== 'history') {
+    if (nextWorkspace !== 'history' && !options.preserveHistory) {
       setSelectedHistory(null);
     }
     setSelectedCase((current) => {
@@ -7408,10 +8636,8 @@ function StudioApp() {
     setActiveWorkspace('image');
     setDeskSessionId(`desk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     const latestSession = loadSession() || session;
-    if (latestSession?.accessToken) {
-      const historyClient = new StudioHistoryClient({ session: latestSession });
-      historyClient.clearCurrentSession().catch(() => {});
-    }
+    const historyClient = new StudioHistoryClient({ session: latestSession });
+    historyClient.clearCurrentSession().catch(() => {});
   }
 
   async function refreshProfile() {
@@ -7517,12 +8743,15 @@ function StudioApp() {
     return nextCase;
   }
 
-function handleSelectHistory(item) {
+function handleSelectHistory(item, options = {}) {
+    const { openWorkspace = true } = options;
     const cases = siteData?.cases || [];
     const matchedCase = item.case?.id ? cases.find((caseItem) => caseItem.id === item.case.id) : null;
     setSelectedCase(matchedCase || item.case || null);
     setSelectedHistory(item);
-    setActiveWorkspace(item.mode === 'video' || item.kind === 'video' ? 'video' : 'image');
+    if (openWorkspace) {
+      setActiveWorkspace(item.mode === 'video' || item.kind === 'video' ? 'video' : 'image');
+    }
   }
 
   function handleHistoryAdd(item) {
@@ -7534,31 +8763,28 @@ function handleSelectHistory(item) {
       return nextItems;
     });
     const latestSession = loadSession() || session;
-    if (latestSession?.accessToken) {
-      setSession(latestSession);
-      const historyClient = new StudioHistoryClient({ session: latestSession });
-      historyClient.saveRecord(normalizedItem)
-        .then((savedRecord) => historyClient.resolveRecordAssets(savedRecord))
-        .then((savedRecord) => {
-          setHistoryItems((current) => {
-            const nextItems = mergeHistoryRecords([savedRecord], current.filter((historyItem) => historyItem.id !== normalizedItem.id && historyItem.id !== savedRecord.id));
-            saveHistory(nextItems, historyScopeFromIdentity(latestSession, profile));
-            return nextItems;
-          });
-          setHistoryStatus('synced');
-        })
-        .catch(() => setHistoryStatus('local'));
-    }
+    if (latestSession?.accessToken) setSession(latestSession);
+    const historyClient = new StudioHistoryClient({ session: latestSession });
+    historyClient.saveRecord(normalizedItem)
+      .then((savedRecord) => historyClient.resolveRecordAssets(savedRecord))
+      .then((savedRecord) => {
+        setHistoryItems((current) => {
+          const nextItems = mergeHistoryRecords([savedRecord], current.filter((historyItem) => historyItem.id !== normalizedItem.id && historyItem.id !== savedRecord.id));
+          saveHistory(nextItems, historyScopeFromIdentity(latestSession, profile));
+          return nextItems;
+        });
+        setHistoryStatus('synced');
+      })
+      .catch(() => setHistoryStatus('local'));
   }
 
   function handleSessionSnapshot(snapshot) {
     setCurrentSessionSnapshot(snapshot);
     if (!remoteSessionReady) return;
     const latestSession = loadSession() || session;
-    if (!latestSession?.accessToken) return;
     const payload = prepareCurrentSessionForServer(snapshot);
     if (!payload) return;
-    const encoded = JSON.stringify(payload);
+    const encoded = sessionSnapshotComparePayload(snapshot);
     if (sessionSaveRef.current.lastPayload === encoded) return;
     sessionSaveRef.current.lastPayload = encoded;
     if (sessionSaveRef.current.timer) window.clearTimeout(sessionSaveRef.current.timer);
@@ -7579,28 +8805,32 @@ function handleSelectHistory(item) {
   }
 
   function handleDeleteHistory(recordId) {
+    if (recordId && typeof recordId === 'object') {
+      const recordIds = recordId.recordIds || [recordId.id];
+      recordIds.forEach((id) => handleDeleteHistory(id));
+      return;
+    }
     setHistoryItems((current) => {
       const nextItems = current.filter((item) => item.id !== recordId);
       saveHistory(nextItems, historyScope());
       return nextItems;
     });
-    if (selectedHistory?.id === recordId) setSelectedHistory(null);
+    deletePersistedHistory(recordId, historyScope());
+    if (selectedHistory?.id === recordId || selectedHistory?.sessionId === recordId || selectedHistory?.recordIds?.includes?.(recordId)) setSelectedHistory(null);
     const latestSession = loadSession() || session;
-    if (latestSession?.accessToken) {
-      const historyClient = new StudioHistoryClient({ session: latestSession });
-      historyClient.deleteRecord(recordId).catch(() => setHistoryStatus('local'));
-    }
+    const historyClient = new StudioHistoryClient({ session: latestSession });
+    historyClient.deleteRecord(recordId).catch(() => setHistoryStatus('local'));
   }
 
   function handleClearHistory() {
-    saveHistory([], historyScope());
+    const scope = historyScope();
+    saveHistory([], scope);
+    clearPersistedHistory(scope);
     setHistoryItems([]);
     setSelectedHistory(null);
     const latestSession = loadSession() || session;
-    if (latestSession?.accessToken) {
-      const historyClient = new StudioHistoryClient({ session: latestSession });
-      historyClient.clearRecords().catch(() => setHistoryStatus('local'));
-    }
+    const historyClient = new StudioHistoryClient({ session: latestSession });
+    historyClient.clearRecords().catch(() => setHistoryStatus('local'));
   }
 
   if (bootError && !siteData) {
@@ -7675,13 +8905,15 @@ function handleSelectHistory(item) {
             onProfileRefresh={refreshProfile}
             onHistoryAdd={handleHistoryAdd}
             remoteSession={remoteSession}
+            remoteSessionReady={remoteSessionReady}
+            persistenceKey={persistenceKey}
             onSessionSnapshot={handleSessionSnapshot}
             promptPresets={siteData?.promptPresets || PROMPT_PRESETS}
             appendTemplateRequest={appendTemplateRequest}
             onAppendTemplateConsumed={(requestId) => {
               setAppendTemplateRequest((current) => current?.id === requestId ? null : current);
             }}
-            onOpenWorkspace={handleWorkspaceChange}
+            onOpenWorkspace={(workspace) => handleWorkspaceChange(workspace, { preserveHistory: true })}
             focusSignal={canvasFocusSignal}
             t={t}
           />
@@ -7714,7 +8946,8 @@ function handleSelectHistory(item) {
             onToggleTemplateFavorite={handleToggleTemplateFavorite}
             onAppendTemplate={handleAppendTemplate}
             licenseNotice={siteData?.license}
-            onOpenWorkspace={handleWorkspaceChange}
+            onOpenWorkspace={(workspace) => handleWorkspaceChange(workspace, { preserveHistory: true })}
+            t={t}
           />
         ) : (
           <GalleryWorkspacePanel
@@ -7735,7 +8968,7 @@ function handleSelectHistory(item) {
             historyHasMore={historyNextOffset !== null}
             historyLoadingMore={historyLoadingMore}
             selectedHistoryId={selectedHistory?.id}
-            onSelectHistory={handleSelectHistory}
+            onSelectHistory={(item) => handleSelectHistory(item, { openWorkspace: false })}
             onDeleteHistory={handleDeleteHistory}
             onClearHistory={handleClearHistory}
             onLoadMoreHistory={handleLoadMoreHistory}
@@ -7745,7 +8978,8 @@ function handleSelectHistory(item) {
             onToggleTemplateFavorite={handleToggleTemplateFavorite}
             onAppendTemplate={handleAppendTemplate}
             licenseNotice={siteData?.license}
-            onOpenWorkspace={handleWorkspaceChange}
+            onOpenWorkspace={(workspace) => handleWorkspaceChange(workspace, { preserveHistory: true })}
+            t={t}
           />
         )}
       </div>

@@ -1,14 +1,12 @@
-# image-sub2api-studio
+# AI Image Workbench
 
 ## 项目介绍
 
-我做 `image-sub2api-studio`，最开始是一个很实际的需求：图片模型和 OpenAI 兼容接口已经能用了，但真正面向创作者的生图流程还是太散。
+我做这个项目，最开始是一个很实际的需求：图片模型和 OpenAI 兼容接口已经能用了，但真正面向创作者的生图流程还是太散。
 
-我不想让用户每次都去拼接口参数，也不想把提示词模板、参考图、历史图库和生成结果散在一堆页面里。这个项目想做的是一个轻量的 AI 生图创作工作站：选择接口和 Key、写提示词、拖拽或粘贴参考图、调整尺寸和画质、生成图片，再沿着上一张图一步步继续迭代。
+我不想让用户每次都去拼接接口参数，也不想把提示词模板、参考图、历史图库、生成队列和生成结果散在一堆页面里。这个项目想做的是一个轻量的 AI 图像创作工作台：选择接口和 Key，写提示词，拖拽或粘贴参考图，调整尺寸和画质，生成图片，再沿着上一张图一步步继续迭代。
 
-Sub2API 是我最早接入的网关，因为它已经把账号、Key、额度、计费和 OpenAI 兼容图片接口接好了。但这个项目不想一直只绑定某一个反代或中转站。后续它会逐渐成为一个更通用的创作工作站：可以接官方 API，也可以接自定义 OpenAI 兼容接口、Sub2API、NewAPI 以及类似的图片生成网关。
-
-`0.8.1` 继续把它从“能用的网页”往“创作工作台”推进。页面现在以无限画布和底部创作会话为中心：第一次生成会成为 #1，选中 #1 再生成会延伸出 #2 / #3，并用连线保留关系。点击单张图片时，可以看到完整保存下来的提示词，并按内容分段阅读。历史图库按会话保存，不再一张图一个项目；刷新、超时或停止后，也会尽量保留当前画布和已经收到的预览结果。
+Sub2API 是我最早接入的网关，因为它已经把账号、Key、额度、计费和 OpenAI 兼容图片接口接好了。但这个项目不应该一直只绑定某一个反代或中转站。后续它会逐渐成为一个更通用的 AI 图像工作站：可以接官方 API，也可以接自定义 OpenAI 兼容接口、Sub2API、NewAPI 以及类似的图片生成网关。
 
 这个仓库只包含创作工作台本身，不包含私有生产首页、完整私有图库、真实 Key 或网关后端实现。
 
@@ -19,27 +17,34 @@ Sub2API 是我最早接入的网关，因为它已经把账号、Key、额度、
 如果你也在做 AI 生图工作流，或者想一起讨论官方 API、自定义兼容接口、Sub2API、NewAPI、部署、模型调用、提示词工作流和后续改进，欢迎进 QQ 交流群：`260789529`。
 
 <p align="center">
-  <a href="https://github.com/margetrp-hub/image-sub2api-studio"><img src="https://img.shields.io/badge/project-image--sub2api--studio-0f766e?style=flat-square" alt="project"></a>
+  <a href="https://github.com/margetrp-hub/image-sub2api-studio"><img src="https://img.shields.io/badge/project-ai--image--workbench-0f766e?style=flat-square" alt="project"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-1f7268?style=flat-square" alt="MIT License"></a>
   <a href="./README.md"><img src="https://img.shields.io/badge/lang-English-blue?style=flat-square" alt="English"></a>
 </p>
 
-## 0.8.x 做到了什么
+## 0.9 Beta 做到了什么
 
 - 生图默认走 `/v1/images/generations`，直接调用 `gpt-image-2` 等图片模型，避免误进 `/v1/responses` 的降级链路。
-- 参考图编辑、Mask 局部重绘走 `/v1/images/edits`。
+- 参考图编辑和 Mask 局部重绘走 `/v1/images/edits`。
 - 同一个工作台可以连接官方 OpenAI 风格接口、自定义 OpenAI 兼容网关、Sub2API、NewAPI 和类似服务。
-- 底部创作会话可以调用对话模型来优化提示词，会明确使用当前选中 Key 的额度。
-- 选中画布节点后继续生成，会按 #1 -> #2 / #3 的方式保留创作分支。
+- Docker 可以用 `STUDIO_AUTH_MODE=local` 运行，当前会话、历史图库、队列和生成资产可以在没有上游账号系统的情况下持久化。
+- 已有账号系统的部署可以继续用 `STUDIO_AUTH_MODE=gateway`，通过现有网关账号做用户隔离。
+- 新配置优先使用通用的 `VITE_AI_*` 和 `AI_GATEWAY_*` 命名；旧的 `VITE_SUB2API_*` 和 `SUB2API_*` 仍作为兼容别名保留。
+- 服务端生成队列会持久化；上游账号池验证稳定后，可以用 `STUDIO_JOB_CONCURRENCY` 小心打开每用户并发。
+- 大画布会进入性能模式，虚拟化离屏图片/视频节点，并降低 SVG 连线动画压力。
+- 底部创作会话可以调用对话模型优化提示词，会使用当前选中 Key 的额度。
+- 选中画布节点后继续生成，会保留 #1 -> #2 / #3 这样的创作分支关系。
 - 点击单张生成图时，会展示完整保存的提示词，并按主体、场景、风格、构图等内容分段阅读。
-- 对话助手会尊重“衍生、局部修改、重写、不要、改成”等方向，不再强行把用户否定的旧内容带回来。
-- 当前会话、画布节点、选中节点、参数、进度和预览结果会通过 `/studio-api/session` 持久化。
+- 提示词助手会尊重“衍生、局部修改、重写、不要、改成”等方向，不再强行把用户否定的旧内容带回来。
+- 当前画布会话通过 `/studio-api/session` 保存，并按登录用户或本地工作区隔离。
 - 登录后的生图会先提交到 `/studio-api/generation-jobs`，由服务端调用 `/v1/images/generations` 或 `/v1/images/edits` 并保存结果；页面刷新后仍可从当前画布和历史图库恢复。
-- 生图超时、停止或网络中断时，页面会进入“待确认”状态，提示上游可能仍在处理或已扣费，避免误导用户连续重复提交。
-- 历史图库按会话展示，当前会话中的生成结果不会再在左侧项目里重复拆成多条。
-- Key 只打码展示，避免在 UI 中直接暴露完整 Key。
-- 左下角个人区提供中英界面切换和深浅色切换，跟账号入口放在一起。
-- 模板/灵感内容可以作为 starter 数据，也可以改成登录后由 `/studio-api/library` 下发，方便生产环境保护私有素材。
+- 生图超时、停止或网络中断时，页面会进入“待确认”状态，提示上游可能仍在处理或已经扣费，避免误导用户连续重复提交。
+- 历史图库按会话展示，左侧项目不再把同一会话里的每张图拆成多个项目。
+- 浏览器侧历史恢复增加 IndexedDB 缓存层，localStorage 只作为兜底，减少大历史丢失或撑爆 localStorage 的概率。
+- 历史图库、本地会话卡片、视频灵感和图片模板结果都会分批渲染，避免一次性挂载太多 DOM 和图片节点。
+- Key 只打码展示；手动输入的自定义接口 API Key 只保存在当前浏览器会话，不写入 localStorage。
+- 左下角个人区提供中文/英文界面切换和深浅色切换。
+- 模板/灵感内容可以作为 starter 静态数据，也可以在生产环境改成登录后由 `/studio-api/library` 下发，保护私有素材和提示词。
 
 ## 截图
 
@@ -64,7 +69,7 @@ Sub2API 是我最早接入的网关，因为它已经把账号、Key、额度、
 
 官方 API、自定义兼容网关、Sub2API、NewAPI 等服务负责：账号、Key、额度、模型、计费和网关转发。
 
-`image-sub2api-studio` 负责：创作页面、提示词工作流、参考图上传、参数控制、无限画布、画布续作、历史图库、当前会话持久化和部署示例。
+AI Image Workbench 负责：创作页面、提示词工作流、参考图上传、参数控制、无限画布、画布续作、历史图库、当前会话持久化和部署示例。
 
 提示词模板来自社区学习材料和公开案例整理，适用时遵循 `CC BY 4.0` 许可证；使用和改编时请保留原作者或来源归属。更完整的边界说明见 [致谢与参考边界](docs/ACKNOWLEDGEMENTS.zh-CN.md)。
 
@@ -72,9 +77,10 @@ Sub2API 是我最早接入的网关，因为它已经把账号、Key、额度、
 
 开源包默认不包含真实 Key、完整私有图库、生产首页或任何网关后端实现。部署时需要自己接入官方 API 账号或已有 OpenAI 兼容网关，并按生产环境配置 Nginx、Docker、HTTPS 和持久化目录。
 
-- 安全边界、密钥处理、数据落盘和生产加固建议见 [SECURITY.md](SECURITY.md)。
-- 0.8 发布说明、升级影响和验证清单见 [RELEASE_NOTES.md](RELEASE_NOTES.md)。
-- 代码授权范围见 [LICENSE](LICENSE)；提示词模板和社区内容不自动并入 MIT 代码授权。
+- 安全边界、密钥处理、数据落盘和生产加固建议：[SECURITY.md](SECURITY.md)。
+- Provider / 网关接入方向：[docs/PROVIDERS.md](docs/PROVIDERS.md)。
+- 0.9 beta 发布说明、升级影响和验证清单：[RELEASE_NOTES.md](RELEASE_NOTES.md)。
+- 代码授权范围：[LICENSE](LICENSE)。提示词模板和社区内容不会自动并入 MIT 代码授权。
 
 ## 本地运行
 
@@ -84,13 +90,13 @@ cp .env.example .env.local
 npm run dev:studio
 ```
 
-如果你本地页面需要直接调用云端 Sub2API，建议在 `.env.local` 里加：
+如果本地页面需要直接调用云端 OpenAI 兼容网关，建议在 `.env.local` 里加：
 
 ```env
-VITE_DEV_SUB2API_PROXY_TARGET=https://你的-sub2api-域名
+VITE_DEV_AI_GATEWAY_PROXY_TARGET=https://你的网关域名
 ```
 
-这样本地页面请求 `/v1`、`/api`、`/login` 会由 Vite 代理到你的 Sub2API，浏览器不会因为跨域拦住真实测试。
+这样本地页面请求 `/v1`、`/api`、`/login` 会由 Vite 代理到你的网关，浏览器不会因为跨域拦住真实测试。
 
 ## 生产构建
 
@@ -119,47 +125,49 @@ Remove-Item Env:\STUDIO_BASE_PATH
 ## 最小环境变量
 
 ```env
-VITE_SUB2API_BASE_URL=https://sub2api.example.com
-VITE_SUB2API_GATEWAY_BASE_URL=https://sub2api.example.com
-VITE_SUB2API_IMAGE_ROUTE=auto
-VITE_SUB2API_RESPONSES_MODEL=gpt-5.5
-VITE_SUB2API_LOGIN_URL=https://studio.example.com/login
+VITE_AI_GATEWAY_BASE_URL=https://gateway.example.com
+VITE_AI_GATEWAY_MODEL_BASE_URL=https://gateway.example.com
+VITE_AI_IMAGE_ROUTE=auto
+VITE_AI_RESPONSES_MODEL=gpt-5.5
+VITE_AI_GATEWAY_LOGIN_URL=https://studio.example.com/login
 VITE_STUDIO_HISTORY_BASE_URL=https://studio.example.com
 VITE_STUDIO_BACK_URL=/
 VITE_STUDIO_LIBRARY_AUTH_REQUIRED=false
-VITE_DEV_SUB2API_PROXY_TARGET=https://sub2api.example.com
+VITE_DEV_AI_GATEWAY_PROXY_TARGET=https://gateway.example.com
 ```
 
 常用理解：
 
-- `VITE_SUB2API_BASE_URL` 用于登录、用户资料、Key 列表，会自动补成 `/api/v1`。
-- `VITE_SUB2API_GATEWAY_BASE_URL` 用于模型和生成接口，会自动补成 `/v1`。
-- `VITE_SUB2API_IMAGE_ROUTE=auto` 是当前推荐模式：普通生图走 `/v1/images/generations`，参考图和 Mask 走 `/v1/images/edits`。
+- `VITE_AI_GATEWAY_BASE_URL` 用于登录、用户资料、Key 列表，会自动补成 `/api/v1`。
+- `VITE_AI_GATEWAY_MODEL_BASE_URL` 用于模型和生成接口，会自动补成 `/v1`。
+- `VITE_AI_IMAGE_ROUTE=auto` 是当前推荐模式：普通生图走 `/v1/images/generations`，参考图和 Mask 走 `/v1/images/edits`。
 - 只有在你的上游明确支持并且你希望测试 `/v1/responses` 生图时，才把它改成 `responses`。
 - `VITE_STUDIO_LIBRARY_AUTH_REQUIRED=true` 适合生产环境把模板库后端化以后再开启。
+- 旧的 `VITE_SUB2API_*` 变量仍然保留为兼容别名；新部署建议优先使用 `VITE_AI_*`。
 
 ## VPS 部署思路
 
 推荐把它当成静态前端 + Node 历史/会话服务来部署：
 
 ```text
-/var/www/image-sub2api-studio/    # 静态文件，示例目录
+/var/www/ai-image-workbench/      # 静态文件，示例目录
 /opt/image-sub2api-studio/        # Node 历史/会话服务
 /var/lib/image-sub2api-studio/    # 用户历史图库、当前会话和受保护素材库
 ```
 
-如果你的 Nginx 实际读取的是另一个目录，就把核心包解压到那个目录。目录名不重要，关键是要和 Nginx `alias` 一致。
+如果你的 Nginx 实际读取的是另一个目录，就把构建后的 `dist/` 文件部署到那个目录。目录名不重要，关键是要和 Nginx `alias` 一致。已有 VPS 可以继续沿用 `/opt/image-sub2api-studio` 和 `/var/lib/image-sub2api-studio`，这样旧历史、会话、队列、生成图片和受保护素材库不会因为更名而丢失。
 
-更多细节见：
+更多细节：
 
 - [部署指南](docs/DEPLOY.zh-CN.md)
 - [Docker 生产部署](docs/DOCKER.zh-CN.md)
 - [VPS 直接同步 Git 仓库部署](docs/VPS-GIT-SYNC.zh-CN.md)
 - [服务器更新说明](deploy/UPDATE-SERVER.zh-CN.md)
 - [安全边界说明](SECURITY.md)
+- [Provider / 网关接入说明](docs/PROVIDERS.md)
 - [Release Notes](RELEASE_NOTES.md)
 
-如果是自己的长期 VPS，推荐使用 Git 同步部署，让服务器直接从仓库拉取、构建、覆盖静态目录并重启服务：
+长期运行的 VPS 建议用 Git 同步部署：服务器直接拉仓库、构建、覆盖静态文件、更新服务并验证线上状态。
 
 ```bash
 cd /opt/image-sub2api-studio-repo
@@ -175,108 +183,145 @@ sudo BRANCH=main \
   bash deploy/sync-from-git.sh
 ```
 
-服务器上如果已经有图片库，后续 zip 更新通常只需要上传核心包，不需要重复上传图库。Git 同步模式下则不需要再手动上传 zip。
+如果服务器已经有图片素材库，zip 前端更新不需要再次上传图库。使用 Git 同步部署后，也不需要每次手动上传 zip 包。
 
 ```bash
-node scripts/package-studio-core-update.mjs
+npm run package:release
 ```
 
-这个命令会同时生成：
+这个命令会生成：
 
-- `image-sub2api-studio-core-update-*.zip`：覆盖静态目录。
-- `image-sub2api-studio-service-update-*.zip`：覆盖 `/opt/image-sub2api-studio`，用于更新历史/会话服务。
+- `ai-image-workbench-core-update-*.zip`：静态前端文件。
+- `ai-image-workbench-service-update-*.zip`：`/opt/image-sub2api-studio` 服务文件。
+- `image-sub2api-studio-core-update-*.zip` 和 `image-sub2api-studio-service-update-*.zip`：给已有 VPS 更新命令保留的旧名称副本。
 
-0.8 需要服务包，因为刷新恢复、当前画布会话和历史图库都依赖 `/studio-api/session` 与 `/studio-api/history`。
+使用当前会话持久化、刷新恢复、队列恢复或历史图库服务时，需要上传服务包。
 
 ## Docker 部署
 
-仓库也提供了 Docker Compose 形态，适合新服务器或开源用户一键启动：
+仓库也提供 Docker Compose 部署，适合新服务器或开源用户快速跑起来：
 
 ```bash
 cp .env.example .env
 docker compose up --build -d
 ```
 
-默认会启动两个容器：
+它会启动两个容器：
 
-- `studio-web`：Nginx 静态前端和同域反向代理。
-- `studio-history`：Node 历史图库、当前会话和生成结果持久化服务。
+- `studio-web`：Nginx 静态前端和同源代理。
+- `studio-history`：历史图库、当前会话和生成资产持久化服务。
 
-数据会保存在 `studio-data` volume。只要不执行 `docker compose down -v`，更新镜像不会丢历史图库和当前画布。
+持久化数据保存在 `studio-data` volume。只要不执行 `docker compose down -v`，重建镜像不会删除图库和当前画布。
 
-如果 Sub2API 跑在宿主机 `127.0.0.1:8080`，保持：
-
-```env
-SUB2API_UPSTREAM=http://host.docker.internal:8080
-```
-
-如果 Sub2API 是远程域名，把它改成：
+如果你的 OpenAI 兼容网关在宿主机 `127.0.0.1:8080`：
 
 ```env
-SUB2API_UPSTREAM=https://你的-sub2api-域名
+AI_GATEWAY_UPSTREAM=http://host.docker.internal:8080
 ```
 
-完整说明见 [Docker 生产部署](docs/DOCKER.zh-CN.md)。
+如果网关是远程域名：
 
-## 素材库和防爬
+```env
+AI_GATEWAY_UPSTREAM=https://your-gateway-domain
+```
 
-前端已经加载的图片、JSON 和提示词，不可能只靠前端彻底隐藏。生产环境如果不希望别人直接 F12 或爬虫拿走素材，建议：
+完整路径见 [Docker 生产部署](docs/DOCKER.zh-CN.md)。
 
-- GitHub 仓库只放轻量 starter JSON，不放完整图库。
-- 私有模板和素材走 `/studio-api/library`，登录后再返回。
-- Nginx 阻断 `/studio/images/`、`/studio/cases.json`、`/studio/inspirations.json` 的静态访问。
-- 加 `X-Robots-Tag: noindex, nofollow, noarchive`，降低搜索引擎收录。
+## 本地验证
+
+发布或部署重构版本之前，先跑不消耗额度的本地门禁：
+
+```bash
+npm run check:local
+```
+
+这个命令会构建应用、验证 provider 路由、检查部署和 Docker Compose 配置、验证服务端持久化/取消/重启行为，并用浏览器 smoke 覆盖按会话归类的历史恢复、IndexedDB 本地历史恢复、历史图库分批渲染、视频灵感分批渲染、图片模板分批渲染、英文界面和手动 Key 不落 localStorage。
+
+如果本机有 Docker Desktop 或 Docker daemon，也可以跑容器运行时 smoke：
+
+```bash
+npm run smoke:docker
+```
+
+这个命令会构建 Compose 栈，启动 `studio-web` 和 `studio-history`，验证 `/studio/`、`/studio-api/health`、JS/CSS Content-Type，然后清理测试栈。如果 Docker 没有运行，这个门禁只是未验证，不包含在 `npm run check:local` 里。
+
+最终决定是否进入发布/部署前，再跑一次总审计：
+
+```bash
+npm run audit:readiness
+```
+
+这个命令会重新跑本地门禁、用当前工作区重新构建并检查 release 包，然后要求 Docker 运行时 smoke 通过。如果 Docker Desktop 或 Docker daemon 没有运行，它会故意失败，而不是把完整容器部署形态当成已验证。
+
+## 素材库策略
+
+任何已经加载到前端的内容，都可以被浏览器检查到。生产环境如果不希望提示词和素材被爬虫或直接抓取，建议：
+
+- GitHub 仓库只放轻量 starter 数据，不放完整私有图库。
+- 私有提示词和素材通过登录后的 `/studio-api/library` 下发。
+- 在 Nginx 中禁止静态访问 `/studio/images/`、`/studio/cases.json`、`/studio/inspirations.json`。
+- 添加 `X-Robots-Tag: noindex, nofollow, noarchive`。
 
 仓库里的 `deploy/nginx-sub2api-studio.conf` 已经放了基础示例。
 
-## Sub2API 合约检查
+## 可选网关合约检查
+
+Provider 路由守卫：
 
 ```bash
-SUB2API_BASE_URL=https://sub2api.example.com \
-SUB2API_EMAIL=you@example.com \
-SUB2API_PASSWORD='your-password' \
-npm run check:sub2api
+npm run check:providers
 ```
 
-这个检查只验证登录、用户资料和 Key 列表，不会发起付费生成。
+它会确保自动生图仍然走 `/v1/images/generations`，图片编辑仍然走 `/v1/images/edits`。
 
-## 目录结构
+```bash
+AI_GATEWAY_BASE_URL=https://gateway.example.com \
+AI_GATEWAY_EMAIL=you@example.com \
+AI_GATEWAY_PASSWORD='your-password' \
+npm run check:gateway
+```
+
+这个检查只验证账号型网关的登录、资料和 Key 列表，不会启动付费生图。旧的 `SUB2API_*` 变量和 `npm run check:sub2api` 仍作为兼容别名保留。
+
+## 项目结构
 
 ```text
 .
-├── src/
-│   ├── studio.jsx                         # 创作工作台主界面
-│   ├── studio.css                         # 工作台样式
-│   ├── sub2apiClient.js                   # Sub2API / OpenAI 兼容接口客户端
-│   └── studio/                            # 纯函数工具与本地存储工具
-├── scripts/
-│   ├── image-sub2api-studio-history-service.mjs
-│   ├── check-sub2api-contract.mjs
-│   └── package-studio-core-update.mjs
-├── deploy/
-│   ├── nginx-sub2api-studio.conf
-│   ├── docker-nginx.conf.template
-│   ├── image-sub2api-studio-history.service
-│   └── UPDATE-SERVER.zh-CN.md
-├── docs/
-│   ├── DEPLOY.zh-CN.md
-│   ├── DOCKER.zh-CN.md
-│   ├── open-source-config.zh-CN.md
-│   ├── sub2api-studio-overlay.md
-│   ├── templates.md
-│   └── screenshots/
-├── SECURITY.md                           # 安全边界和生产加固说明
-├── RELEASE_NOTES.md                      # 当前版本发布说明
-├── public/
-│   ├── cases.json
-│   ├── inspirations.json
-│   ├── inspiration-sources.json
-│   └── style-library.json
-└── studio.html
+|- src/
+|  |- studio.jsx                         # 主工作台 UI
+|  |- studio.css                         # 工作台样式
+|  |- aiGatewayClient.js                 # OpenAI 兼容网关客户端
+|  |- sub2apiClient.js                   # 旧导入路径兼容转发
+|  `- studio/                            # Provider、存储和工具函数
+|- scripts/
+|  |- image-sub2api-studio-history-service.mjs
+|  |- check-sub2api-contract.mjs
+|  |- package-release.mjs
+|  `- package-studio-core-update.mjs        # 旧名称兼容入口
+|- deploy/
+|  |- nginx-sub2api-studio.conf
+|  |- docker-nginx.conf.template
+|  |- image-sub2api-studio-history.service
+|  `- UPDATE-SERVER.zh-CN.md
+|- docs/
+|  |- DEPLOY.zh-CN.md
+|  |- DOCKER.zh-CN.md
+|  |- open-source-config.zh-CN.md
+|  |- sub2api-studio-overlay.md
+|  |- templates.md
+|  `- screenshots/
+|- SECURITY.md
+|- RELEASE_NOTES.md
+|- public/
+|  |- cases.json
+|  |- inspirations.json
+|  |- inspiration-sources.json
+|  `- style-library.json
+`- studio.html
 ```
 
 ## 作者与授权
 
 维护者：[@margetrp-hub](https://github.com/margetrp-hub)
 
-代码按 [MIT License](LICENSE) 开源。提示词模板内容来自社区，适用时遵循 `CC BY 4.0` 许可证；第三方依赖、第三方提示词来源和用户自行接入的素材库按各自许可证或服务条款处理。
+代码使用 [MIT License](LICENSE) 发布。社区提示词模板在适用时遵循 `CC BY 4.0`；第三方依赖、提示词来源和用户自行接入的素材库遵循各自许可证或服务条款。

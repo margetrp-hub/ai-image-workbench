@@ -1,5 +1,41 @@
 # Release Notes
 
+## 0.9.0-beta.1
+
+This release is the first step toward a real 1.0 beta, but it is intentionally not labeled 1.0 yet.
+
+The project is moving from `image-sub2api-studio` as a Sub2API-oriented starter into `AI Image Workbench`: a standalone image creation workstation that can run with an OpenAI-compatible gateway, while still keeping backward compatibility with existing Sub2API deployments.
+
+### What Changed
+
+- Public package name changed to `ai-image-workbench`.
+- Front-end configuration now prefers generic gateway variables:
+  - `VITE_AI_GATEWAY_BASE_URL`
+  - `VITE_AI_GATEWAY_MODEL_BASE_URL`
+  - `VITE_AI_IMAGE_ROUTE`
+  - `VITE_AI_RESPONSES_MODEL`
+  - `VITE_AI_GATEWAY_LOGIN_URL`
+- Docker and Nginx proxy configuration now prefer `AI_GATEWAY_UPSTREAM`.
+- The history/session service now prefers `AI_GATEWAY_BASE_URL`.
+- Existing `VITE_SUB2API_*`, `SUB2API_UPSTREAM`, and `SUB2API_BASE_URL` variables remain as compatibility aliases.
+- Docker Compose defaults to `STUDIO_AUTH_MODE=local`, so the workbench can persist sessions/history without depending on an upstream account system.
+- Gateway-authenticated deployments can still use `STUDIO_AUTH_MODE=gateway`.
+- Provider settings now separate credential source (`apiKeySource`) from provider family (`providerId`), so existing gateway accounts, manual OpenAI-compatible APIs, and future NewAPI-style adapters have a clearer path.
+- `src/studio/providers/registry.js` now stores route, auth, capability, parameter, and default-model metadata for provider families.
+- Server-side generation jobs now persist provider metadata and normalize orphaned active jobs to `unknown` after a service restart or lost runner, instead of leaving them looking actively queued forever.
+- Browser-side history now uses IndexedDB as an expanded local cache with localStorage as a fallback, reducing the chance that larger local histories disappear or overload localStorage.
+- The history gallery now renders local session cards in batches, reducing the initial DOM and image-node pressure when a user has many saved sessions.
+- The video inspiration gallery now renders cards in batches as well, keeping larger idea libraries lighter in the browser.
+- Image template category/search results now render cards in batches too, so large prompt libraries avoid mounting every card at once.
+- JSON persistence reads now tolerate UTF-8 BOMs, which makes Windows-authored backups and manual VPS recovery files safer to load.
+- Large-canvas performance mode virtualizes offscreen image/video nodes and reduces SVG line animation load.
+- Manual provider API keys are session-only in the browser. Provider configuration can persist, but raw manually entered API keys are migrated out of `localStorage` and kept only in `sessionStorage` for the current browser session.
+- The local release gate now includes documentation encoding checks, so broken README or docs mojibake is caught before publishing.
+
+### Why This Is Not 1.0 Yet
+
+The workbench now has a cleaner standalone deployment shape and generic gateway naming, but the provider abstraction is still transitional. A true 1.0 should finish the provider registry, make model capabilities explicit per provider, and document a stable extension path for OpenAI, NewAPI, Sub2API, and other compatible gateways.
+
 ## 0.8.1
 
 This is a small repair release after the first 0.8 deployment.
@@ -66,6 +102,15 @@ Do not run `docker compose down -v` unless you intend to delete history, jobs, a
 
 ## Verification Checklist
 
+- Final readiness audit:
+  - `npm run audit:readiness`
+  - This reruns the local gate, rebuilds and checks the release package pair from the current worktree, and requires the Docker runtime smoke. If Docker is not running, readiness remains unproven.
+- Local no-paid-generation gate:
+  - `npm run check:local`
+  - This covers build, provider route dispatch, deploy config, Docker Compose parsed config, docs encoding, service persistence/cancel/restart behavior, browser history-session recovery, IndexedDB-backed local history recovery, manual provider key storage safety, history-gallery batch rendering, video-inspiration batch rendering, and image-template batch rendering.
+- Docker runtime smoke when Docker is available:
+  - `npm run smoke:docker`
+  - This builds and starts the Compose stack, checks `/studio/`, `/studio-api/health`, and JS/CSS content types, then removes the temporary test stack.
 - `npm run build:studio` completes.
 - `/studio/` returns the built `studio.html`.
 - `/studio/studio-assets/*.js` returns `application/javascript`, not `text/html`.

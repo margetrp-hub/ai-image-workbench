@@ -1,7 +1,7 @@
 // src/studio/util/filename.js
 //
 // 下载文件名工具：把 Provider ID、生成时间、prompt 与 MIME 折叠成形如
-// `image-sub2api-studio-{provider}-{YYYYMMDD-HHmm}-{slug}-{index}.{ext}` 的纯函数文件名，
+// `ai-image-workbench-{provider}-{YYYYMMDD-HHmm}-{slug}-{index}.{ext}` 的纯函数文件名，
 // 用于 ResultGrid / Lightbox / HistoryCard 三处的下载锚 `download` 属性。
 //
 // 设计依据：
@@ -26,7 +26,7 @@
  *
  * @typedef {Object} BuildDownloadFilenameArgs
  * @property {string} providerId
- *   Provider Registry 中的 ID（如 `'sub2api'` / `'replicate'`）。会被
+ *   Provider Registry 中的 ID（如 `'gateway-account'` / `'replicate'`）。会被
  *   `sanitizeProvider` 归一化为 `[a-z0-9-]`。
  * @property {string} createdAt
  *   ISO 8601 字符串或 `new Date()` 可接受的形式；按本地时区格式化为
@@ -43,15 +43,15 @@
 /**
  * 把生成结果元数据折叠为下载文件名。
  *
- * 形态：`image-sub2api-studio-{provider}-{YYYYMMDD-HHmm}-{slug}-{index}.{ext}`。
+ * 形态：`ai-image-workbench-{provider}-{YYYYMMDD-HHmm}-{slug}-{index}.{ext}`。
  *
  * 示例：
- *   - `A corgi running on the beach.` / `sub2api` / `image/png` / index `0`
- *     → `image-sub2api-studio-sub2api-20260517-1330-a-corgi-running-on-the-beach-1.png`
+ *   - `A corgi running on the beach.` / `gateway-account` / `image/png` / index `0`
+ *     → `ai-image-workbench-gateway-account-20260517-1330-a-corgi-running-on-the-beach-1.png`
  *   - `咖啡杯特写` / `pollinations` / `image/jpeg` / index `0`
- *     → `image-sub2api-studio-pollinations-20260517-1330-image-1.jpg`
+ *     → `ai-image-workbench-pollinations-20260517-1330-image-1.jpg`
  *   - `Café au lait, soft light` / `replicate` / `image/webp` / index `0`
- *     → `image-sub2api-studio-replicate-20260517-0905-cafe-au-lait-soft-light-1.webp`
+ *     → `ai-image-workbench-replicate-20260517-0905-cafe-au-lait-soft-light-1.webp`
  *
  * @param   {BuildDownloadFilenameArgs} args
  * @returns {string}
@@ -62,7 +62,7 @@ export function buildDownloadFilename({ providerId, createdAt, prompt, mime, ind
   const slug = buildPromptSlug(prompt);
   const ext = mimeToExt(mime);
   const seq = String(Math.max(1, (Number.isFinite(index) ? (index | 0) : 0) + 1));
-  return `image-sub2api-studio-${provider}-${stamp}-${slug}-${seq}.${ext}`;
+  return `ai-image-workbench-${provider}-${stamp}-${slug}-${seq}.${ext}`;
 }
 
 /**

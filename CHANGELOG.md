@@ -42,7 +42,7 @@
 
 ## 0.5.0 - 2026-05-28
 
-- Changed image generation to call image models through `/v1/responses` directly, so `gpt-image-2` no longer falls back to `gpt-5.5 + image_generation tool`.
+- Stabilized image generation around direct image-model endpoints; current releases use `/v1/images/generations` for text-to-image, while `/v1/responses` is kept only for explicit compatibility testing.
 - Routed reference-image editing and Mask redraw through `/v1/images/edits`.
 - Added an infinite-canvas creation area where results remain in the current session and previous images can be selected for continuation.
 - Masked user keys in the UI.

@@ -1,16 +1,14 @@
-# image-sub2api-studio
+# AI Image Workbench
 
 ## Project Story
 
-I started `image-sub2api-studio` from a very practical need: image models were already available through OpenAI-compatible gateways, but the actual creation workflow still felt scattered.
+I started this project from a very practical need: image models were already available through OpenAI-compatible APIs and gateways, but the actual creation workflow still felt scattered.
 
-I did not want users to manually assemble payloads, switch between prompt notes, upload references in one place, check results somewhere else, and then lose the thread after a refresh. I wanted a lighter image creation workstation where prompt writing, reference images, model selection, quality settings, generation results, canvas iteration, and history gallery all stay in one focused page.
+I did not want users to manually assemble payloads, switch between prompt notes, upload references in one place, check results somewhere else, and then lose the thread after a refresh. I wanted a lightweight image creation workstation where prompt writing, reference images, model selection, quality settings, generation results, canvas iteration, queues, and history gallery stay in one focused page.
 
-Sub2API was the first gateway I built around because it already handled accounts, keys, quota, billing, and OpenAI-compatible image routes. The project is now moving beyond a single gateway: it is designed to work with official OpenAI-style endpoints, custom compatible gateways, Sub2API, NewAPI, and similar providers as long as they expose compatible image generation/editing routes.
+Sub2API was the first gateway I built around because it already handled accounts, keys, quota, billing, and OpenAI-compatible image routes. The project is now deliberately moving beyond a single gateway. It is meant to become a general AI image workbench that can connect to official OpenAI-style APIs, custom compatible gateways, Sub2API, NewAPI, and similar providers as long as they expose compatible image generation/editing routes.
 
-`0.8.1` keeps that direction: the interface centers on an infinite canvas and a bottom creation conversation. The first generation becomes #1; selecting #1 and generating again creates #2 / #3, with visible lineage lines. Each image can be opened to inspect the full saved prompt in readable sections. History is grouped by creation session rather than by single image, and refreshes, timeouts, or manual stops preserve as much current canvas state as possible.
-
-This repository only includes the studio app. It does not include any private production homepage, private production image library, real keys, or gateway backend implementation.
+This repository only includes the workstation app. It does not include any private production homepage, private production image library, real keys, or gateway backend implementation.
 
 Demo: [studio.ohlaoo.com/studio/](https://studio.ohlaoo.com/studio/)
 
@@ -19,16 +17,22 @@ Demo: [studio.ohlaoo.com/studio/](https://studio.ohlaoo.com/studio/)
 If you are exploring AI image workflows, OpenAI-compatible image endpoints, gateway deployment, model routing, prompt workflows, or future workstation improvements, you are welcome to join the QQ group: `260789529`.
 
 <p align="center">
-  <a href="https://github.com/margetrp-hub/image-sub2api-studio"><img src="https://img.shields.io/badge/project-image--sub2api--studio-0f766e?style=flat-square" alt="project"></a>
+  <a href="https://github.com/margetrp-hub/image-sub2api-studio"><img src="https://img.shields.io/badge/project-ai--image--workbench-0f766e?style=flat-square" alt="project"></a>
   <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-1f7268?style=flat-square" alt="MIT License"></a>
-  <a href="./README.zh-CN.md"><img src="https://img.shields.io/badge/lang-简体中文-blue?style=flat-square" alt="简体中文"></a>
+  <a href="./README.zh-CN.md"><img src="https://img.shields.io/badge/lang-中文-blue?style=flat-square" alt="中文"></a>
 </p>
 
-## What 0.8.x Does
+
+## What 0.9 Beta Does
 
 - Image generation uses `/v1/images/generations` by default and calls image models such as `gpt-image-2` directly, avoiding accidental `/v1/responses` fallback paths.
 - Reference-image editing and mask redraw use `/v1/images/edits`.
 - The same workstation can connect to official OpenAI-style endpoints, custom OpenAI-compatible gateways, Sub2API, NewAPI, and similar providers.
+- Docker can run in `STUDIO_AUTH_MODE=local`, so current sessions, history, queues, and generated assets can persist without depending on an upstream account system.
+- Gateway-authenticated deployments can still use `STUDIO_AUTH_MODE=gateway` for per-user isolation through an existing account service.
+- Generic `VITE_AI_*` and `AI_GATEWAY_*` configuration names are preferred; older `VITE_SUB2API_*` and `SUB2API_*` names remain as compatibility aliases.
+- Server-side generation queues are persisted and can use `STUDIO_JOB_CONCURRENCY` for cautious per-user concurrency after upstream account-pool testing.
+- Large canvas sessions use performance mode to virtualize offscreen image/video nodes and reduce SVG line animation pressure.
 - The bottom creation conversation can call a chat model to refine prompts and uses the current selected key quota.
 - Selecting a canvas node and generating again keeps #1 -> #2 / #3 lineage.
 - Opening a single generated image shows the full saved prompt, split into readable sections instead of one long line.
@@ -37,6 +41,10 @@ If you are exploring AI image workflows, OpenAI-compatible image endpoints, gate
 - Authenticated image requests are submitted to `/studio-api/generation-jobs`; the server then calls `/v1/images/generations` or `/v1/images/edits`, stores the result assets, and lets the canvas/history recover after refresh.
 - Timeout, stop, and network interruption states are shown as pending review when the upstream request may still be processing or charged.
 - The history gallery is grouped by creation session, while the left project list no longer splits one session into one project per image.
+- Browser-side history recovery now has an IndexedDB cache layer in addition to the existing localStorage fallback, so larger local histories are less likely to disappear when localStorage is constrained.
+- The history gallery renders local sessions in batches instead of mounting every card at once, which keeps large histories lighter in the browser.
+- The video inspiration gallery also renders in batches, so future larger prompt/video idea libraries do not mount every card at once.
+- Image template search/category results render in batches too, keeping large prompt libraries from mounting every card at once.
 - Keys are masked in the UI.
 - The lower-left account area includes Chinese/English UI switching and light/dark theme controls.
 - Starter prompt and inspiration data can remain static for demos, or move behind `/studio-api/library` for protected production deployments.
@@ -64,7 +72,7 @@ This repository is not a model provider and not a gateway backend.
 
 Official APIs, custom gateways, Sub2API, NewAPI, and similar services own accounts, keys, quota, models, billing, and gateway routing.
 
-`image-sub2api-studio` owns the creation UI: prompts, reference upload, parameter controls, infinite canvas, canvas continuation, history gallery, current-session persistence, and deployment samples.
+AI Image Workbench owns the creation UI: prompts, reference upload, parameter controls, infinite canvas, canvas continuation, history gallery, current-session persistence, and deployment samples.
 
 Community prompt templates are used as learning/reference material. Where applicable, prompt template content follows `CC BY 4.0`; keep attribution to original authors or sources when using or adapting it. See [Acknowledgements and Reference Boundaries](docs/ACKNOWLEDGEMENTS.md).
 
@@ -73,7 +81,8 @@ Community prompt templates are used as learning/reference material. Where applic
 The open-source package does not include real API keys, the private production image library, the production home page, or any gateway backend implementation. A production deployment should connect this studio to an existing official API account or OpenAI-compatible gateway, then configure Nginx, Docker, HTTPS, and persistent storage explicitly.
 
 - Security boundary, key handling, stored data, and production hardening notes: [SECURITY.md](SECURITY.md).
-- 0.8 release notes, migration impact, and verification checklist: [RELEASE_NOTES.md](RELEASE_NOTES.md).
+- Provider and gateway integration direction: [docs/PROVIDERS.md](docs/PROVIDERS.md).
+- 0.9 beta notes, migration impact, and verification checklist: [RELEASE_NOTES.md](RELEASE_NOTES.md).
 - Source-code license scope: [LICENSE](LICENSE). Community prompt templates and third-party content are not automatically relicensed as MIT code.
 
 ## Local Run
@@ -84,10 +93,10 @@ cp .env.example .env.local
 npm run dev:studio
 ```
 
-For local testing against a cloud Sub2API endpoint:
+For local testing against a cloud OpenAI-compatible gateway:
 
 ```env
-VITE_DEV_SUB2API_PROXY_TARGET=https://your-sub2api-domain
+VITE_DEV_AI_GATEWAY_PROXY_TARGET=https://your-gateway-domain
 ```
 
 This lets the local page call `/v1`, `/api`, and `/login` through the Vite dev server instead of being blocked by browser CORS.
@@ -119,22 +128,22 @@ Upload the files from `dist/`. Do not upload the source-root `studio.html` direc
 ## Minimum Environment
 
 ```env
-VITE_SUB2API_BASE_URL=https://sub2api.example.com
-VITE_SUB2API_GATEWAY_BASE_URL=https://sub2api.example.com
-VITE_SUB2API_IMAGE_ROUTE=auto
-VITE_SUB2API_RESPONSES_MODEL=gpt-5.5
-VITE_SUB2API_LOGIN_URL=https://studio.example.com/login
+VITE_AI_GATEWAY_BASE_URL=https://gateway.example.com
+VITE_AI_GATEWAY_MODEL_BASE_URL=https://gateway.example.com
+VITE_AI_IMAGE_ROUTE=auto
+VITE_AI_RESPONSES_MODEL=gpt-5.5
+VITE_AI_GATEWAY_LOGIN_URL=https://studio.example.com/login
 VITE_STUDIO_HISTORY_BASE_URL=https://studio.example.com
 VITE_STUDIO_BACK_URL=/
 VITE_STUDIO_LIBRARY_AUTH_REQUIRED=false
-VITE_DEV_SUB2API_PROXY_TARGET=https://sub2api.example.com
+VITE_DEV_AI_GATEWAY_PROXY_TARGET=https://gateway.example.com
 ```
 
 Notes:
 
-- `VITE_SUB2API_BASE_URL` is normalized to `/api/v1` for login, profile, and key-list APIs.
-- `VITE_SUB2API_GATEWAY_BASE_URL` is normalized to `/v1` for model and generation routes.
-- `VITE_SUB2API_IMAGE_ROUTE=auto` is the recommended mode for this release: text-to-image uses `/v1/images/generations`, while reference image and Mask flows use `/v1/images/edits`.
+- `VITE_AI_GATEWAY_BASE_URL` is normalized to `/api/v1` for login, profile, and key-list APIs when your gateway exposes those APIs.
+- `VITE_AI_GATEWAY_MODEL_BASE_URL` is normalized to `/v1` for model and generation routes.
+- `VITE_AI_IMAGE_ROUTE=auto` is the recommended mode for this release: text-to-image uses `/v1/images/generations`, while reference image and Mask flows use `/v1/images/edits`.
 - Set it to `responses` only when your upstream explicitly supports image generation through `/v1/responses` and you want to test that path.
 - Set `VITE_STUDIO_LIBRARY_AUTH_REQUIRED=true` only after the authenticated `/studio-api/library` service is available.
 
@@ -143,12 +152,12 @@ Notes:
 I usually deploy it as static front-end files plus the Node history/session service:
 
 ```text
-/var/www/image-sub2api-studio/    # Static files, example path
+/var/www/ai-image-workbench/      # Static files, example path
 /opt/image-sub2api-studio/        # Node history/session service
 /var/lib/image-sub2api-studio/    # User history gallery, current session, and protected assets
 ```
 
-If your Nginx server block reads another path, unzip the core package there instead. The directory name does not matter; it only needs to match the Nginx `alias`.
+If your Nginx server block reads another path, deploy the built `dist/` files there instead. The directory name does not matter; it only needs to match the Nginx `alias`. Existing VPS installs can keep legacy service/data paths such as `/opt/image-sub2api-studio` and `/var/lib/image-sub2api-studio` so old history, sessions, queues, generated images, and protected library assets remain visible after the rename.
 
 More details:
 
@@ -157,6 +166,7 @@ More details:
 - [VPS Git sync guide](docs/VPS-GIT-SYNC.zh-CN.md)
 - [Server update guide](deploy/UPDATE-SERVER.zh-CN.md)
 - [Security boundary](SECURITY.md)
+- [Provider and gateway notes](docs/PROVIDERS.md)
 - [Release notes](RELEASE_NOTES.md)
 
 For a long-running VPS, prefer Git sync deployment so the server pulls the repository, builds locally, updates static files, restarts the service, and verifies the live state:
@@ -178,15 +188,16 @@ sudo BRANCH=main \
 If the server already has an image library, zip-based front-end updates do not need the image library again. With Git sync deployment, you no longer need to upload zip packages manually.
 
 ```bash
-node scripts/package-studio-core-update.mjs
+npm run package:release
 ```
 
 This command creates:
 
-- `image-sub2api-studio-core-update-*.zip`: static front-end files.
-- `image-sub2api-studio-service-update-*.zip`: `/opt/image-sub2api-studio` service files.
+- `ai-image-workbench-core-update-*.zip`: static front-end files.
+- `ai-image-workbench-service-update-*.zip`: `/opt/image-sub2api-studio` service files.
+- `image-sub2api-studio-core-update-*.zip` and `image-sub2api-studio-service-update-*.zip`: legacy-name copies for existing VPS commands.
 
-For 0.8, upload the service package when using current-session persistence, refresh recovery, or the history gallery service.
+Upload the service package when using current-session persistence, refresh recovery, queue recovery, or the history gallery service.
 
 ## Docker Deployment
 
@@ -204,19 +215,45 @@ It starts two containers:
 
 Persistent data lives in the `studio-data` volume. Rebuilding images keeps the gallery and current canvas as long as you do not run `docker compose down -v`.
 
-If Sub2API runs on the host at `127.0.0.1:8080`, keep:
+If your OpenAI-compatible gateway runs on the host at `127.0.0.1:8080`, keep:
 
 ```env
-SUB2API_UPSTREAM=http://host.docker.internal:8080
+AI_GATEWAY_UPSTREAM=http://host.docker.internal:8080
 ```
 
-If Sub2API is a remote domain, set:
+If the gateway is a remote domain, set:
 
 ```env
-SUB2API_UPSTREAM=https://your-sub2api-domain
+AI_GATEWAY_UPSTREAM=https://your-gateway-domain
 ```
 
 See [Docker production guide](docs/DOCKER.zh-CN.md) for the full deployment path.
+
+## Local Verification
+
+Before publishing or deploying a refactor build, run the local no-paid-generation gate:
+
+```bash
+npm run check:local
+```
+
+This builds the app, verifies provider routing, validates deployment and Docker Compose configuration, checks service persistence/cancel/restart behavior, and runs browser smokes for session-grouped history recovery, IndexedDB-backed local history recovery, history-gallery batch rendering, video-inspiration batch rendering, and image-template batch rendering. It does not call a paid image model.
+
+When Docker Desktop or a Docker daemon is available, also run the container runtime smoke:
+
+```bash
+npm run smoke:docker
+```
+
+That command builds the Compose stack, starts `studio-web` and `studio-history`, verifies `/studio/`, `/studio-api/health`, and JS/CSS content types, then removes the temporary test stack. If Docker is not running, this gate is simply unverified; it is not covered by `npm run check:local`.
+
+For the final pre-release decision, run:
+
+```bash
+npm run audit:readiness
+```
+
+This command reruns the local gate, rebuilds and verifies the release packages from the current worktree, and then requires the Docker runtime smoke. If Docker Desktop or the Docker daemon is not running, the audit intentionally fails instead of treating the container deployment shape as proven.
 
 ## Asset Library Strategy
 
@@ -229,16 +266,24 @@ Anything already loaded by front-end code can be inspected in the browser. For p
 
 The repository includes a starting Nginx example in `deploy/nginx-sub2api-studio.conf`.
 
-## Sub2API Contract Check
+## Optional Gateway Contract Check
+
+Provider route guard:
 
 ```bash
-SUB2API_BASE_URL=https://sub2api.example.com \
-SUB2API_EMAIL=you@example.com \
-SUB2API_PASSWORD='your-password' \
-npm run check:sub2api
+npm run check:providers
 ```
 
-This checks login, profile, and key-list behavior. It does not start paid generation.
+This keeps automatic image generation on `/v1/images/generations` and image editing on `/v1/images/edits`.
+
+```bash
+AI_GATEWAY_BASE_URL=https://gateway.example.com \
+AI_GATEWAY_EMAIL=you@example.com \
+AI_GATEWAY_PASSWORD='your-password' \
+npm run check:gateway
+```
+
+This checks login, profile, and key-list behavior for an account-backed gateway. It does not start paid generation. Older `SUB2API_*` variables and `npm run check:sub2api` still work as compatibility aliases.
 
 ## Project Structure
 
@@ -247,12 +292,14 @@ This checks login, profile, and key-list behavior. It does not start paid genera
 ├── src/
 │   ├── studio.jsx                         # Main studio UI
 │   ├── studio.css                         # Studio styles
-│   ├── sub2apiClient.js                   # Sub2API / OpenAI-compatible client
+│   ├── aiGatewayClient.js                 # OpenAI-compatible gateway client
+│   ├── sub2apiClient.js                   # Legacy compatibility re-export
 │   └── studio/                            # Helpers and local storage utilities
 ├── scripts/
 │   ├── image-sub2api-studio-history-service.mjs
 │   ├── check-sub2api-contract.mjs
-│   └── package-studio-core-update.mjs
+│   ├── package-release.mjs
+│   └── package-studio-core-update.mjs        # Legacy compatibility wrapper
 ├── deploy/
 │   ├── nginx-sub2api-studio.conf
 │   ├── docker-nginx.conf.template

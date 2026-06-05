@@ -6,7 +6,7 @@
 - `studio-history`：Node 历史/会话服务，负责历史图库、当前画布会话和生成结果资产持久化。
 - `studio-data`：Docker volume，保存每个登录用户的 `records.json`、`session.json` 和本地化图片资产。
 
-Sub2API 本身不打进这个镜像。项目通过 `SUB2API_UPSTREAM` 连接你已有的 Sub2API 服务。
+模型网关本身不打进这个镜像。项目通过 `AI_GATEWAY_UPSTREAM` 连接你已有的 OpenAI 兼容 API、NewAPI、Sub2API 兼容服务或其他自定义网关。
 
 ## 1. 准备环境
 
@@ -20,11 +20,11 @@ cp .env.example .env
 
 ```env
 STUDIO_PORT=8080
-SUB2API_UPSTREAM=http://host.docker.internal:8080
-VITE_SUB2API_IMAGE_ROUTE=auto
+AI_GATEWAY_UPSTREAM=http://host.docker.internal:8080
+VITE_AI_IMAGE_ROUTE=auto
 ```
 
-`VITE_SUB2API_IMAGE_ROUTE=auto` 的含义是：
+`VITE_AI_IMAGE_ROUTE=auto` 的含义是：
 
 ```text
 普通生图       -> /v1/images/generations
@@ -34,36 +34,36 @@ VITE_SUB2API_IMAGE_ROUTE=auto
 
 不要把它改成 `responses`，除非你明确要测试 `/v1/responses` 的兼容生图路径。
 
-如果 Sub2API 已经跑在宿主机 `127.0.0.1:8080`，Docker 默认值可以直接用：
+如果 OpenAI 兼容网关已经跑在宿主机 `127.0.0.1:8080`，Docker 默认值可以直接用：
 
 ```env
-SUB2API_UPSTREAM=http://host.docker.internal:8080
+AI_GATEWAY_UPSTREAM=http://host.docker.internal:8080
 STUDIO_PORT=8080
 ```
 
-如果 Sub2API 是另一个容器，把它改成同一个 Docker 网络里的服务名：
+如果网关是另一个容器，把它改成同一个 Docker 网络里的服务名：
 
 ```env
-SUB2API_UPSTREAM=http://sub2api:8080
+AI_GATEWAY_UPSTREAM=http://gateway:8080
 ```
 
-如果 Sub2API 是远程域名：
+如果网关是远程域名：
 
 ```env
-SUB2API_UPSTREAM=https://sub2api.example.com
+AI_GATEWAY_UPSTREAM=https://gateway.example.com
 ```
 
 默认建议让浏览器只访问 Studio 同域接口，所以 `.env` 里保持：
 
 ```env
-VITE_SUB2API_BASE_URL=
-VITE_SUB2API_GATEWAY_BASE_URL=
-VITE_SUB2API_LOGIN_URL=/login
+VITE_AI_GATEWAY_BASE_URL=
+VITE_AI_GATEWAY_MODEL_BASE_URL=
+VITE_AI_GATEWAY_LOGIN_URL=/login
 VITE_STUDIO_HISTORY_BASE_URL=
-VITE_SUB2API_IMAGE_ROUTE=auto
+VITE_AI_IMAGE_ROUTE=auto
 ```
 
-这样前端会请求当前 Studio 域名下的 `/api`、`/login`、`/v1/images/generations`、`/v1/images/edits` 和提示词助手用到的 `/v1/chat/completions`，再由 Nginx 转发到 `SUB2API_UPSTREAM`。
+这样前端会请求当前 Studio 域名下的 `/api`、`/login`、`/v1/images/generations`、`/v1/images/edits` 和提示词助手用到的 `/v1/chat/completions`，再由 Nginx 转发到 `AI_GATEWAY_UPSTREAM`。
 
 ## 2. 启动
 
@@ -128,6 +128,8 @@ docker volume inspect image-sub2api-studio_studio-data
 
 `jobs.json` 保存服务端生成任务状态，图片结果会落到 `assets/`，因此浏览器刷新后可以重新恢复当前会话里的生成结果。更新镜像或重建容器不会删除这个 volume。不要用 `docker compose down -v`，除非你明确要清空历史图库、任务记录和当前会话。
 
+队列默认按每个用户 `STUDIO_JOB_CONCURRENCY=1` 串行执行。账号池和上游稳定后，可以先调到 `2` 小流量测试；不要一开始就调得很高，否则可能放大上游排队、失败或扣费后无结果的问题。
+
 备份：
 
 ```bash
@@ -156,7 +158,7 @@ docker compose up -d
 
 只要不删除 `studio-data` volume，历史图库、当前画布和已本地化的生成图片都会保留。
 
-不要用 zip 包更新 Docker 容器里的前端。Docker 模式的更新入口是 Git 仓库和镜像重建；传统 VPS 模式才使用 `image-sub2api-studio-core-update-*.zip` 和 `image-sub2api-studio-service-update-*.zip`。
+不要用 zip 包更新 Docker 容器里的前端。Docker 模式的更新入口是 Git 仓库和镜像重建；传统 VPS 模式才使用 `ai-image-workbench-core-update-*.zip` 和 `ai-image-workbench-service-update-*.zip`。旧名称 `image-sub2api-studio-core-update-*.zip` 和 `image-sub2api-studio-service-update-*.zip` 仍会作为兼容副本生成。
 
 ## 5. VPS/Nginx 外层反代
 
@@ -282,7 +284,7 @@ curl -I http://localhost:8080/studio/studio-assets/<file>.js
 
 正确应该是 `application/javascript`，不是 `text/html`。
 
-### 容器连不上宿主机 Sub2API
+### 容器连不上宿主机网关
 
 Linux VPS 需要 Compose 里的：
 
@@ -291,4 +293,4 @@ extra_hosts:
   - "host.docker.internal:host-gateway"
 ```
 
-本项目已经默认配置。若仍失败，直接把 `SUB2API_UPSTREAM` 改成 Sub2API 的内网 IP 或域名。
+本项目已经默认配置。若仍失败，直接把 `AI_GATEWAY_UPSTREAM` 改成网关的内网 IP 或域名。旧的 `SUB2API_UPSTREAM` 仍可作为兼容别名使用。
