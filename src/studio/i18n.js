@@ -77,7 +77,7 @@ export const dictionaries = {
       dark: '切换深色'
     },
     lock: {
-      protected: '素材库和提示词已保护，登录后加载。'
+      protected: '受保护素材登录后加载，公开模板可继续使用。'
     },
     gallery: {
       external: '外部',
@@ -584,7 +584,7 @@ export const dictionaries = {
       dark: 'Switch to dark mode'
     },
     lock: {
-      protected: 'Assets and prompts are protected. Log in to load them.'
+      protected: 'Protected assets load after login. Public templates remain available.'
     },
     gallery: {
       external: 'External',

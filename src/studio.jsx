@@ -8362,11 +8362,6 @@ function StudioApp() {
 
   useEffect(() => {
     if (!session?.accessToken) {
-      if (LIBRARY_AUTH_REQUIRED) {
-        setSiteData(EMPTY_SITE_DATA);
-        setSelectedCase(null);
-        return;
-      }
       let active = true;
       setSiteData(null);
       loadStaticLibraryData()
@@ -8844,7 +8839,7 @@ function handleSelectHistory(item, options = {}) {
       {isLibraryLocked ? (
         <div className="libraryLockNotice">
           <KeyRound size={15} />
-          <span>{t('lock.protected', '素材库和提示词已保护，登录后加载。')}</span>
+          <span>{t('lock.protected', '受保护素材登录后加载，公开模板可继续使用。')}</span>
           <button type="button" onClick={handleRequireLogin}>{t('topbar.login', '登录')}</button>
         </div>
       ) : null}
@@ -8931,7 +8926,7 @@ function handleSelectHistory(item, options = {}) {
             category={category}
             setCategory={setCategory}
             totalCaseCount={siteData?.cases?.length || 0}
-            loading={!siteData || isLibraryLocked}
+            loading={!siteData}
             videoInspirations={siteData?.videoInspirations || FALLBACK_VIDEO_INSPIRATIONS}
             historyItems={filteredHistoryItems}
             historyStatus={historyStatus}
@@ -8963,7 +8958,7 @@ function handleSelectHistory(item, options = {}) {
             category={category}
             setCategory={setCategory}
             totalCaseCount={siteData?.cases?.length || 0}
-            loading={!siteData || isLibraryLocked}
+            loading={!siteData}
             videoInspirations={siteData?.videoInspirations || FALLBACK_VIDEO_INSPIRATIONS}
             historyItems={filteredHistoryItems}
             historyStatus={historyStatus}
