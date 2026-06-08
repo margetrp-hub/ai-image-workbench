@@ -1,5 +1,5 @@
 const BASE_PATH = import.meta.env.BASE_URL || '/';
-const PROTECTED_IMAGE_CONCURRENCY = 4;
+const PROTECTED_IMAGE_CONCURRENCY = 6;
 const protectedImageQueue = [];
 let activeProtectedImageRequests = 0;
 

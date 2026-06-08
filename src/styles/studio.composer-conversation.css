@@ -5,6 +5,71 @@
   grid-template-columns: minmax(0, 1fr) !important;
 }
 
+@media (max-width: 760px) {
+  .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer,
+  .creationDesk.referencesOpen.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer,
+  .creationDesk.paramRailCollapsed.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer,
+  .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.noThread,
+  .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread,
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.noLiveStatus,
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread.noLiveStatus,
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread.noReferences,
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread.noReferences.noLiveStatus,
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread.noReferences.paramsExpanded,
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread.noReferences.noLiveStatus.paramsExpanded,
+  .studioLayout .creationDesk.paramRailCollapsed.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread.noReferences.noLiveStatus.paramsExpanded,
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer:has(.composerParamShelf.isExpanded),
+  .studioLayout .creationDesk.referencesOpen.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasReferences,
+  .studioLayout .creationDesk.referencesOpen.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread.hasReferences,
+  .studioLayout .creationDesk.referencesOpen.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread.hasReferences.paramsExpanded,
+  .studioLayout .creationDesk.referencesOpen.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread.hasReferences.paramsCollapsed,
+  .studioLayout .creationDesk.paramRailCollapsed.referencesOpen.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread.hasReferences.paramsExpanded,
+  .studioLayout .creationDesk.paramRailCollapsed.referencesOpen.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread.hasReferences.paramsCollapsed {
+    left: 50% !important;
+    right: auto !important;
+    bottom: 10px !important;
+    width: min(366px, calc(100vw - 24px)) !important;
+    min-width: min(320px, calc(100vw - 24px)) !important;
+    max-width: calc(100vw - 24px) !important;
+    padding: 14px !important;
+    transform: translateX(-50%) !important;
+    height: min(640px, calc(100dvh - 24px)) !important;
+    min-height: min(500px, calc(100dvh - 24px)) !important;
+    grid-template-rows: 42px minmax(0, 1fr) 116px 38px !important;
+  }
+
+  .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer .composerPromptRow,
+  .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.noThread .composerPromptRow,
+  .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasThread .composerPromptRow,
+  .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer .bottomComposerInput textarea {
+    height: 116px !important;
+    min-height: 116px !important;
+    max-height: 116px !important;
+  }
+
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasLiveStatus,
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasLiveStatus.hasThread,
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasLiveStatus.hasThread.noReferences,
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasLiveStatus.hasThread.noReferences.paramsExpanded,
+  .studioLayout .creationDesk.paramRailCollapsed.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasLiveStatus.hasThread.noReferences.paramsExpanded {
+    grid-template-rows: 42px 82px minmax(170px, 1fr) 116px 40px !important;
+  }
+
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasLiveStatus .composerPromptRow,
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasLiveStatus .bottomComposerInput textarea,
+  .studioLayout .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer.hasLiveStatus .composerActionGroup {
+    height: 116px !important;
+    min-height: 116px !important;
+    max-height: 116px !important;
+  }
+
+  .studioLayout .creationDesk .referenceSidePanel.isCollapsed,
+  .studioLayout .creationDesk.referencesOpen .referenceSidePanel.isCollapsed {
+    top: 112px !important;
+    right: 10px !important;
+  }
+}
+
 .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer:has(.composerParamShelf.isExpanded) {
   grid-template-rows: 50px minmax(0, 1fr) 112px 48px !important;
   grid-template-columns: minmax(0, 1fr) !important;

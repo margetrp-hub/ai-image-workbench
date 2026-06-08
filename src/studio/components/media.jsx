@@ -6,7 +6,7 @@ import {
   isProtectedStudioAsset
 } from '../util/assets.js';
 
-export function ProtectedStudioImage({ src, fallbackSrc = '', alt = '', fallback = null }) {
+export function ProtectedStudioImage({ src, fallbackSrc = '', alt = '', fallback = null, rootMargin = '420px' }) {
   const holderRef = useRef(null);
   const [shouldResolve, setShouldResolve] = useState(() => {
     const value = String(src || '');
@@ -41,10 +41,10 @@ export function ProtectedStudioImage({ src, fallbackSrc = '', alt = '', fallback
         setShouldResolve(true);
         observer.disconnect();
       }
-    }, { rootMargin: '180px' });
+    }, { rootMargin });
     observer.observe(node);
     return () => observer.disconnect();
-  }, [src, fallbackSrc]);
+  }, [src, fallbackSrc, rootMargin]);
 
   useEffect(() => {
     let active = true;
@@ -97,14 +97,25 @@ export function ProtectedStudioImage({ src, fallbackSrc = '', alt = '', fallback
     };
   }, [src, fallbackSrc, shouldResolve]);
 
-  if (!src || failed || !resolvedSrc) return <span ref={holderRef}>{fallback}</span>;
+  if (!src || failed || !resolvedSrc) {
+    return (
+      <span
+        ref={holderRef}
+        className={`protectedStudioImage ${failed ? 'isFailed' : 'isLoading'}`}
+        aria-busy={!failed && Boolean(src)}
+      >
+        {fallback}
+      </span>
+    );
+  }
   return (
-    <span ref={holderRef}>
+    <span ref={holderRef} className="protectedStudioImage isLoaded">
       <img
         src={resolvedSrc}
         alt={alt}
         loading="lazy"
         decoding="async"
+        draggable={false}
         onError={(event) => {
           const candidates = [src, fallbackSrc]
             .map((value) => String(value || '').trim())

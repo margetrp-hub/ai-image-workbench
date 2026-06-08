@@ -102,7 +102,7 @@ try {
   assert(sideResult.cardCount === 2, `Expected two uploaded reference cards, got ${sideResult.cardCount}.`, sideResult);
   assert(sideResult.visibleFileMetaCount === 0, 'Reference sidebar should not show filenames or file sizes.', sideResult);
   assert(sideResult.visibleRoleControlCount === 0, 'Reference sidebar should not show role selectors; it is only the uploaded image list.', sideResult);
-  assert(sideResult.imageObjectFits.every((value) => value === 'cover'), 'Reference thumbnails should be compact visual thumbnails; full inspection happens in the lightbox.', sideResult);
+  assert(sideResult.imageObjectFits.every((value) => value === 'contain'), 'Reference thumbnails should show the whole uploaded image; full inspection happens in the lightbox.', sideResult);
   assert(sideResult.panelRect?.right >= sideResult.viewport.width - 1, 'Reference panel should be attached to the right edge.', sideResult);
   assert(sideResult.panelRect?.height >= sideResult.viewport.height - 1, 'Reference panel should run full height.', sideResult);
   assert(!sideResult.panelText.includes('reference-product-angle.png') && !sideResult.panelText.includes('reference-style-board.png'), 'Reference sidebar should not expose filenames as primary content.', sideResult);

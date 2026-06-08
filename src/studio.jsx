@@ -169,14 +169,14 @@ const MODERATION = ['auto', 'low'];
 const IMAGE_MODEL_PATTERN = /(?:^|[^a-z0-9])(?:gpt-)?image[-_a-z0-9]*\d|(?:^|[^a-z0-9])dall[-_a-z0-9]*\d/i;
 const IMAGE_REFERENCE_LIMIT = 4;
 const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
-const CANVAS_PLANE_WIDTH = 2400;
-const CANVAS_PLANE_HEIGHT = 1600;
+const CANVAS_PLANE_WIDTH = 6000;
+const CANVAS_PLANE_HEIGHT = 4200;
 const CANVAS_NODE_WIDTH = 340;
 const CANVAS_NODE_HEIGHT = 280;
 const CANVAS_NODE_MIN_WIDTH = 240;
 const CANVAS_NODE_MIN_HEIGHT = 200;
-const CANVAS_NODE_MAX_WIDTH = 620;
-const CANVAS_NODE_MAX_HEIGHT = 520;
+const CANVAS_NODE_MAX_WIDTH = 1280;
+const CANVAS_NODE_MAX_HEIGHT = 960;
 const CANVAS_NODE_HORIZONTAL_GAP = 170;
 const CANVAS_NODE_VERTICAL_GAP = 88;
 const CANVAS_DRAG_CLICK_TOLERANCE = 4;
@@ -444,8 +444,10 @@ function loadCurrentSession() {
 }
 
 function saveCurrentSession(session) {
+  const createdAt = session?.createdAt || new Date().toISOString();
   const nextSession = {
     ...(normalizeCachedCurrentSession(session) || session),
+    createdAt,
     updatedAt: new Date().toISOString()
   };
   try {
@@ -550,6 +552,18 @@ function prepareCurrentSessionForServer(session) {
 function sessionSnapshotComparePayload(session) {
   const payload = prepareCurrentSessionForServer(session);
   return payload ? JSON.stringify(payload) : '';
+}
+
+function hasMeaningfulSessionContent(session) {
+  if (!session || typeof session !== 'object') return false;
+  return Boolean(
+    String(session.prompt || '').trim()
+    || (Array.isArray(session.results) && session.results.length)
+    || (Array.isArray(session.videoResults) && session.videoResults.length)
+    || (Array.isArray(session.canvasNodes) && session.canvasNodes.length)
+    || (Array.isArray(session.generationQueue) && session.generationQueue.length)
+    || (Array.isArray(session.assistantMessages) && session.assistantMessages.length)
+  );
 }
 
 function hasRestorableServerGeneration(session) {
@@ -1300,14 +1314,14 @@ function categoryCover(value, variant = 'thumb') {
 
 function templateThumbnail(item) {
   if (!item) return '';
-  if (item.thumbnail) return item.thumbnail;
-  const image = item.image || item.image_url || '';
-  if (/^\/studio-api\/library-assets\//i.test(image)) return image;
-  if (/^\/images\/[^/]+\.(jpe?g|png)$/i.test(image)) {
-    return image.replace(/^\/images\/(case[^/.]+)\.(jpe?g|png)$/i, '/images/thumbs/$1.webp');
+  if (item.thumbnail || item.thumb || item.thumbnail_url || item.thumbnailUrl) {
+    return item.thumbnail || item.thumb || item.thumbnail_url || item.thumbnailUrl;
   }
-  if (/^https?:/i.test(image)) return '';
-  return image;
+  const image = item.image || item.image_url || '';
+  if (/^\/images\/[^/]+\.(jpe?g|png)$/i.test(image)) {
+    return image.replace(/^\/images\/(.+)\.(jpe?g|png)$/i, '/images/thumbs/$1.webp');
+  }
+  return '';
 }
 
 function imageFallback(item) {
@@ -1331,7 +1345,7 @@ function handleImageFallback(event, fallback) {
 }
 
 function libraryFallbackImage(item) {
-  return templateThumbnail(item) || imageFallback(item);
+  return templateThumbnail(item);
 }
 
 function buildCategoryGroups(cases) {
@@ -1646,7 +1660,7 @@ function CategoryCard({ group, selected, onSelect }) {
 
 function CaseCard({ item, selected, onSelect, favorite, onToggleFavorite, onAppend, t = (key, fallback) => fallback || key }) {
   const image = templateThumbnail(item);
-  const fallback = imageFallback(item);
+  const fallback = '';
   const risks = Array.isArray(item.riskTags) ? item.riskTags.slice(0, 3) : [];
   return (
     <div className={`caseTile ${selected ? 'selected' : ''}`}>
@@ -1660,6 +1674,7 @@ function CaseCard({ item, selected, onSelect, favorite, onToggleFavorite, onAppe
             />
           ) : null}
           <ImageIcon size={18} />
+          <small className="casePreviewHint">{t('gallery.preview', '查看')}</small>
         </div>
         <span>{typeof item.id === 'number' ? `#${item.id}` : t('gallery.external', '外部')}</span>
         <strong>{item.title}</strong>
@@ -1819,8 +1834,8 @@ function GalleryWorkspacePanel({
   const visibleHistoryItems = historySessionItems.slice(0, visibleLimit);
   const historyLocalHasMore = visibleLimit < historySessionItems.length;
   const selectedTemplate = selected && selected.kind !== 'video-inspiration' ? selected : null;
-  const selectedTemplateImage = selectedTemplate ? templateThumbnail(selectedTemplate) : '';
-  const selectedTemplateFallback = selectedTemplate ? imageFallback(selectedTemplate) : '';
+  const selectedTemplateImage = selectedTemplate ? templatePreviewImage(selectedTemplate) : '';
+  const selectedTemplateFallback = selectedTemplate ? templateThumbnail(selectedTemplate) : '';
   const selectedTemplatePrompt = selectedTemplate?.promptPreview || selectedTemplate?.prompt || selectedTemplate?.summary || '';
   const selectedHistoryItem = useMemo(() => {
     if (!isHistory || !selectedHistoryId) return null;
@@ -2551,6 +2566,7 @@ function CreationDesk({
   const draftRef = useRef(loadDraft());
   const currentSessionRef = useRef(loadCurrentSession());
   const restoredSession = currentSessionRef.current;
+  const sessionCreatedAtRef = useRef(restoredSession?.createdAt || new Date().toISOString());
   const initialParameters = restoredSession?.parameters || draftRef.current || {};
   const restoredMode = restoredSession?.mode || (activeWorkspace === 'video' ? 'video' : 'image');
   const generationRef = useRef({ id: 0, controller: null });
@@ -3132,16 +3148,36 @@ function CreationDesk({
     setTiming(sessionSnapshot.timing || null);
   }
 
+  function commitCurrentSessionPatch(patch) {
+    const snapshot = saveCurrentSession({
+      ...currentSessionRef.current,
+      sessionId,
+      ...patch
+    });
+    currentSessionRef.current = snapshot;
+    const encodedSnapshot = sessionSnapshotComparePayload(snapshot);
+    if (lastSessionSnapshotPayloadRef.current !== encodedSnapshot) {
+      lastSessionSnapshotPayloadRef.current = encodedSnapshot;
+      onSessionSnapshot?.(snapshot);
+    }
+    return snapshot;
+  }
+
+  function commitGenerationQueue(nextQueue) {
+    generationQueueRef.current = nextQueue;
+    setGenerationQueue(nextQueue);
+    commitCurrentSessionPatch({ generationQueue: nextQueue });
+  }
+
   useEffect(() => {
     if (!remoteSession) return;
     const remoteSessionMarker = remoteSession.updatedAt || sessionSnapshotComparePayload(remoteSession);
     if (!remoteSessionMarker) return;
     if (appliedRemoteSessionRef.current === remoteSessionMarker) return;
     const remoteUpdated = Date.parse(remoteSession.updatedAt) || 0;
-    const localUpdated = Date.parse(currentSessionRef.current?.updatedAt || '') || 0;
-    const hasLocalActiveQueue = Array.isArray(currentSessionRef.current?.generationQueue)
-      && currentSessionRef.current.generationQueue.some((item) => ['queued', 'running'].includes(item?.status));
-    if (localUpdated && localUpdated > remoteUpdated && (canvasNodes.length || hasLocalActiveQueue)) return;
+    const localSession = currentSessionRef.current;
+    const localUpdated = Date.parse(localSession?.updatedAt || '') || 0;
+    if (localUpdated && localUpdated > remoteUpdated && hasMeaningfulSessionContent(localSession)) return;
     appliedRemoteSessionRef.current = remoteSessionMarker;
     currentSessionRef.current = remoteSession;
     applySessionSnapshot(remoteSession);
@@ -3211,6 +3247,7 @@ function CreationDesk({
   useEffect(() => {
     const snapshot = saveCurrentSession({
       sessionId,
+      createdAt: currentSessionRef.current?.createdAt || sessionCreatedAtRef.current,
       mode,
       prompt,
       model,
@@ -3219,9 +3256,9 @@ function CreationDesk({
       persistedResults: currentSessionRef.current?.persistedResults || [],
       persistedVideoResults: currentSessionRef.current?.persistedVideoResults || [],
       resultBatchMeta,
-      canvasNodes,
+      canvasNodes: canvasNodesRef.current,
       canvasCustomLinks,
-      generationQueue,
+      generationQueue: generationQueueRef.current,
       selectedCanvasNodeId,
       canvasEditorNodeId,
       canvasView,
@@ -3601,7 +3638,14 @@ function CreationDesk({
         createdAt: new Date().toISOString()
       }));
       setSelectedCanvasNodeId(nextNodes[0]?.id || '');
-      return [...retained, ...nextNodes];
+      const nextCanvasNodes = [...retained, ...nextNodes];
+      canvasNodesRef.current = nextCanvasNodes;
+      commitCurrentSessionPatch({
+        canvasNodes: nextCanvasNodes,
+        selectedCanvasNodeId: nextNodes[0]?.id || selectedCanvasNodeId,
+        generationQueue: generationQueueRef.current
+      });
+      return nextCanvasNodes;
     });
   }
 
@@ -3688,21 +3732,19 @@ function CreationDesk({
       summary: inheritedPrompt || job.error?.message || `服务端任务 ${job.id}`,
       restorable: false
     };
-    generationQueueRef.current = [
+    commitGenerationQueue([
       remoteTask,
       ...generationQueueRef.current.filter((item) => item.id !== remoteTask.id && item.serverJobId !== job.id)
-    ].slice(0, GENERATION_QUEUE_LIMIT);
-    setGenerationQueue(generationQueueRef.current);
+    ].slice(0, GENERATION_QUEUE_LIMIT));
   }
 
   function clearRemoteGenerationJob(jobId, status = 'done') {
     if (!jobId) return;
-    generationQueueRef.current = generationQueueRef.current.map((item) => (
+    commitGenerationQueue(generationQueueRef.current.map((item) => (
       item.serverJobId === jobId || item.id === `remote-${jobId}`
         ? { ...item, status, completedAt: Date.now() }
         : item
-    ));
-    setGenerationQueue(generationQueueRef.current);
+    )));
   }
 
   useEffect(() => {
@@ -4615,10 +4657,9 @@ function CreationDesk({
   }
 
   function markGenerationTask(id, patch) {
-    generationQueueRef.current = generationQueueRef.current.map((item) => (
+    commitGenerationQueue(generationQueueRef.current.map((item) => (
       item.id === id ? { ...item, ...patch } : item
-    ));
-    setGenerationQueue(generationQueueRef.current);
+    )));
   }
 
   function cancelGenerationTask(id) {
@@ -4651,10 +4692,9 @@ function CreationDesk({
       stopGeneration();
       return;
     }
-    generationQueueRef.current = generationQueueRef.current.map((item) => (
+    commitGenerationQueue(generationQueueRef.current.map((item) => (
       item.id === id ? { ...item, status: 'canceled', completedAt: Date.now() } : item
-    ));
-    setGenerationQueue(generationQueueRef.current);
+    )));
     setMessage(t('statusMessages.queueCanceled', '已取消排队任务。'));
   }
 
@@ -4676,19 +4716,17 @@ function CreationDesk({
       restored: false,
       summary: target.prompt || target.summary || t('statusMessages.queueRetryFallbackSummary', '重试生成任务')
     };
-    generationQueueRef.current = [
+    commitGenerationQueue([
       retryTask,
       ...generationQueueRef.current.filter((item) => item.id !== id)
-    ].slice(0, GENERATION_QUEUE_LIMIT);
-    setGenerationQueue(generationQueueRef.current);
+    ].slice(0, GENERATION_QUEUE_LIMIT));
     setMessage(t('statusMessages.queueRetryAdded', '已重新加入生成队列。'));
     runGenerationQueue();
   }
 
   function acknowledgeGenerationTask(id) {
     const target = generationQueueRef.current.find((item) => item.id === id);
-    generationQueueRef.current = generationQueueRef.current.filter((item) => item.id !== id);
-    setGenerationQueue(generationQueueRef.current);
+    commitGenerationQueue(generationQueueRef.current.filter((item) => item.id !== id));
     if (target?.status === 'unknown') {
       setMessage(t('statusMessages.queueUnknownDismissed', '已收起结果未知的任务；请稍后查看历史图库，如果没有新结果再重试。'));
     } else {
@@ -4712,8 +4750,7 @@ function CreationDesk({
       return;
     }
     showComposerForGeneration();
-    generationQueueRef.current = [...generationQueueRef.current, task].slice(-GENERATION_QUEUE_LIMIT);
-    setGenerationQueue(generationQueueRef.current);
+    commitGenerationQueue([...generationQueueRef.current, task].slice(-GENERATION_QUEUE_LIMIT));
     setMessage(activeCount
       ? t('statusMessages.queueAddedBehind', '已加入队列，前面还有 {count} 个任务。', { count: activeCount })
       : t('statusMessages.queueAdded', '已加入队列。'));
@@ -7287,8 +7324,16 @@ function StudioApp() {
       .then((snapshot) => {
         if (!active) return;
         if (snapshot) {
-          const sessionSnapshot = saveCurrentSession({ ...snapshot, sessionId: snapshot.sessionId || deskSessionId });
-          setCurrentSessionSnapshot(sessionSnapshot);
+          const remoteSnapshot = { ...snapshot, sessionId: snapshot.sessionId || deskSessionId };
+          const localSnapshot = loadCurrentSession();
+          const remoteUpdated = Date.parse(remoteSnapshot.updatedAt || '') || 0;
+          const localUpdated = Date.parse(localSnapshot?.updatedAt || '') || 0;
+          if (localUpdated && localUpdated > remoteUpdated && hasMeaningfulSessionContent(localSnapshot)) {
+            setCurrentSessionSnapshot(localSnapshot);
+          } else {
+            const sessionSnapshot = saveCurrentSession(remoteSnapshot);
+            setCurrentSessionSnapshot(sessionSnapshot);
+          }
         }
         setRemoteSession(snapshot);
         setRemoteSessionReady(true);

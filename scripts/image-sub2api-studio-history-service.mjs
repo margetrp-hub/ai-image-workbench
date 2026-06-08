@@ -582,9 +582,20 @@ function protectedLibraryAssetUrl(value) {
   return '';
 }
 
+function protectedLibraryThumbnailUrl(item) {
+  const direct = protectedLibraryAssetUrl(item.thumbnail || item.thumb || item.thumbnail_url || item.thumbnailUrl);
+  if (direct) return direct;
+
+  const image = String(item.image || item.image_url || '').trim();
+  if (/(?:^|\/)thumbs\//i.test(image)) return protectedLibraryAssetUrl(image);
+  const match = image.match(/^(?:\.\/)?\/?images\/(.+)\.(png|jpe?g)$/i);
+  if (!match) return '';
+  return `/studio-api/library-assets/thumbs/${match[1]}.webp`;
+}
+
 function sanitizeLibrarySummary(item) {
   const image = protectedLibraryAssetUrl(item.image || item.image_url);
-  const thumbnail = protectedLibraryAssetUrl(item.thumbnail) || image;
+  const thumbnail = protectedLibraryThumbnailUrl(item);
   return {
     id: item.id,
     title: text(item.title, 180),
