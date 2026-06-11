@@ -24,6 +24,7 @@ const JOB_TIMEOUT_MS = Number(process.env.STUDIO_JOB_TIMEOUT_MS || 45 * 60 * 100
 const JOB_CONCURRENCY = Math.max(1, Math.min(6, Number(process.env.STUDIO_JOB_CONCURRENCY || 1)));
 const JOB_ACTIVE_STATUSES = new Set(['queued', 'dispatching', 'gateway', 'upstream', 'image', 'saving']);
 const SERVICE_STARTED_AT = Date.now();
+const SERVICE_VERSION = process.env.npm_package_version || process.env.STUDIO_VERSION || '0.9.8';
 const MAX_BODY_BYTES = Number(process.env.STUDIO_MAX_BODY_BYTES || 96 * 1024 * 1024);
 const MAX_IMAGE_BYTES = Number(process.env.STUDIO_MAX_IMAGE_BYTES || 32 * 1024 * 1024);
 const ALLOWED_ORIGINS = String(process.env.STUDIO_ALLOWED_ORIGINS || 'http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5205,http://localhost:5205,http://127.0.0.1:5174,http://localhost:5174')
@@ -255,6 +256,15 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function sendDownloadJson(res, fileName, payload) {
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Disposition': `attachment; filename="${fileName}"`,
+    'Cache-Control': 'no-store'
+  });
+  res.end(JSON.stringify(payload, null, 2));
+}
+
 function sendCors(req, res) {
   const origin = String(req.headers.origin || '').replace(/\/+$/, '');
   const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').trim();
@@ -376,6 +386,10 @@ function sessionPath(auth) {
 
 function jobsPath(auth) {
   return path.join(auth.userDir, 'jobs.json');
+}
+
+function backupsDir(auth) {
+  return path.join(auth.userDir, 'backups');
 }
 
 async function readRecords(auth) {
@@ -518,6 +532,154 @@ async function upsertJob(auth, job) {
     await writeJobsUnlocked(auth, [job, ...jobs.filter((item) => item.id !== job.id)].slice(0, JOB_LIMIT));
     return job;
   });
+}
+
+async function listFilesRecursive(rootDir, baseDir = rootDir) {
+  const entries = await fs.readdir(rootDir, { withFileTypes: true }).catch((error) => {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await listFilesRecursive(fullPath, baseDir));
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    files.push({
+      path: path.relative(baseDir, fullPath).split(path.sep).join('/'),
+      fullPath
+    });
+  }
+  return files;
+}
+
+function safeBackupAssetPath(rawPath) {
+  const value = String(rawPath || '').replace(/\\/g, '/');
+  const segments = value.split('/').filter(Boolean);
+  if (!segments.length || segments.some((segment) => segment === '..' || segment.includes('\0'))) return '';
+  return segments.join('/');
+}
+
+async function readAssetSnapshot(auth) {
+  const root = path.join(auth.userDir, 'assets');
+  const files = await listFilesRecursive(root);
+  const assets = [];
+  for (const file of files) {
+    const safePath = safeBackupAssetPath(file.path);
+    if (!safePath) continue;
+    const buffer = await fs.readFile(file.fullPath);
+    assets.push({
+      path: safePath,
+      bytes: buffer.length,
+      data: buffer.toString('base64')
+    });
+  }
+  return assets;
+}
+
+async function buildUserBackup(auth, reason = 'manual') {
+  const [records, session, jobs, assets] = await Promise.all([
+    readRecords(auth),
+    readSession(auth),
+    readJobs(auth),
+    readAssetSnapshot(auth)
+  ]);
+  return {
+    ok: true,
+    kind: 'ai-image-workbench.user-backup',
+    version: 1,
+    serviceVersion: SERVICE_VERSION,
+    createdAt: new Date().toISOString(),
+    reason,
+    user: {
+      id: auth.user?.id || auth.user?.user?.id || auth.user?.email || auth.user?.username || auth.userKey,
+      key: auth.userKey
+    },
+    counts: {
+      records: records.length,
+      jobs: jobs.length,
+      assets: assets.length,
+      hasSession: Boolean(session)
+    },
+    data: {
+      records,
+      session,
+      jobs,
+      assets
+    }
+  };
+}
+
+async function saveUserBackup(auth, reason = 'pre-restore') {
+  await fs.mkdir(backupsDir(auth), { recursive: true });
+  const backup = await buildUserBackup(auth, reason);
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const fileName = `${stamp}-${reason}.json`;
+  const filePath = path.join(backupsDir(auth), fileName);
+  await fs.writeFile(filePath, JSON.stringify(backup, null, 2));
+  return { fileName, filePath, backup };
+}
+
+function validateUserBackup(payload) {
+  if (!payload || typeof payload !== 'object') {
+    const error = new Error('BACKUP_PAYLOAD_REQUIRED');
+    error.status = 400;
+    throw error;
+  }
+  if (payload.kind !== 'ai-image-workbench.user-backup' || payload.version !== 1) {
+    const error = new Error('BACKUP_FORMAT_UNSUPPORTED');
+    error.status = 400;
+    throw error;
+  }
+  const data = payload.data || {};
+  return {
+    records: Array.isArray(data.records) ? data.records : [],
+    session: data.session && typeof data.session === 'object' ? data.session : null,
+    jobs: Array.isArray(data.jobs) ? data.jobs : [],
+    assets: Array.isArray(data.assets) ? data.assets : []
+  };
+}
+
+async function restoreAssetSnapshot(auth, assets) {
+  const root = path.join(auth.userDir, 'assets');
+  await fs.rm(root, { recursive: true, force: true });
+  await fs.mkdir(root, { recursive: true });
+  for (const asset of assets) {
+    const safePath = safeBackupAssetPath(asset?.path);
+    if (!safePath || typeof asset?.data !== 'string') continue;
+    const filePath = path.join(root, ...safePath.split('/'));
+    const relative = path.relative(root, filePath);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) continue;
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, Buffer.from(asset.data, 'base64'));
+  }
+}
+
+async function restoreUserBackup(auth, payload) {
+  const snapshot = validateUserBackup(payload);
+  const preRestore = await saveUserBackup(auth, 'pre-restore');
+  await ensureUserDirs(auth);
+  await writeRecords(auth, snapshot.records);
+  if (snapshot.session) {
+    await writeSession(auth, snapshot.session);
+  } else {
+    await fs.rm(sessionPath(auth), { force: true });
+  }
+  await writeJobs(auth, snapshot.jobs);
+  await restoreAssetSnapshot(auth, snapshot.assets);
+  return {
+    ok: true,
+    restoredAt: new Date().toISOString(),
+    preRestoreBackup: preRestore.fileName,
+    counts: {
+      records: snapshot.records.length,
+      jobs: snapshot.jobs.length,
+      assets: snapshot.assets.length,
+      hasSession: Boolean(snapshot.session)
+    }
+  };
 }
 
 function text(value, length) {
@@ -1552,15 +1714,32 @@ async function handler(req, res) {
 
   const { url, parts } = parseRoute(req);
   if (parts.join('/') === 'studio-api/health') {
-    return sendJson(res, 200, { ok: true });
+    return sendJson(res, 200, {
+      ok: true,
+      service: 'ai-image-workbench-history',
+      version: SERVICE_VERSION,
+      startedAt: new Date(SERVICE_STARTED_AT).toISOString()
+    });
   }
 
-  if (parts[0] !== 'studio-api' || !['history', 'session', 'generation-jobs', 'library', 'library-assets', 'prompt-presets', 'video-inspirations'].includes(parts[1])) {
+  if (parts[0] !== 'studio-api' || !['history', 'session', 'generation-jobs', 'library', 'library-assets', 'prompt-presets', 'video-inspirations', 'backup'].includes(parts[1])) {
     return sendJson(res, 404, { ok: false, error: 'NOT_FOUND' });
   }
 
   try {
     const auth = await authenticate(req);
+
+    if (req.method === 'GET' && parts[0] === 'studio-api' && parts[1] === 'backup' && parts.length === 2) {
+      const backup = await buildUserBackup(auth, 'manual');
+      const stamp = backup.createdAt.replace(/[:.]/g, '-');
+      return sendDownloadJson(res, `ai-image-workbench-backup-${stamp}.json`, backup);
+    }
+
+    if (req.method === 'POST' && parts[0] === 'studio-api' && parts[1] === 'backup' && parts[2] === 'restore' && parts.length === 3) {
+      const body = await readJsonBody(req);
+      const result = await restoreUserBackup(auth, body);
+      return sendJson(res, 200, result);
+    }
 
     if (req.method === 'GET' && parts[0] === 'studio-api' && parts[1] === 'session' && parts.length === 2) {
       const session = await readSession(auth);

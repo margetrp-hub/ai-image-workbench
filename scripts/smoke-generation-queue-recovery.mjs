@@ -133,6 +133,11 @@ async function installCommonRoutes(page) {
     contentType: 'application/json',
     body: JSON.stringify([{ id: 1, key: 'test-key-smoke-visible-prefix' }])
   }));
+  await page.route('**/keys**', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ id: 1, key: 'test-key-smoke-visible-prefix', status: 'active' }])
+  }));
   await page.route('**/v1/models**', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -290,6 +295,8 @@ try {
 
   const failedPage = await browser.newPage({ viewport: { width: 1440, height: 980 } });
   let failedSessionSaveCount = 0;
+  let failedRetryCreateCount = 0;
+  const failedRetryRequests = [];
   await installCommonRoutes(failedPage);
   await failedPage.route('**/studio-api/session', async (route) => {
     if (route.request().method() === 'POST') {
@@ -330,6 +337,38 @@ try {
       }]
     })
   }));
+  await failedPage.route('**/studio-api/generation-jobs', async (route) => {
+    if (route.request().method() === 'POST') {
+      failedRetryCreateCount += 1;
+      const body = route.request().postDataJSON();
+      failedRetryRequests.push({
+        method: route.request().method(),
+        request: body?.request || null
+      });
+      return route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          job: {
+            id: 'job-failed-retry-1',
+            sessionId: 'queue-failed-session',
+            status: 'succeeded',
+            stage: 'succeeded',
+            prompt: body?.request?.prompt || '',
+            model: body?.request?.model || 'gpt-image-2',
+            size: body?.request?.size || '1024x1024',
+            quality: body?.request?.quality || 'medium',
+            count: 1,
+            completed: 1,
+            total: 1,
+            resultUrls: ['/studio-api/history/job-failed-retry-1/assets/0.png']
+          }
+        })
+      });
+    }
+    return route.continue();
+  });
   await failedPage.route('**/studio-api/generation-jobs/job-failed-1', (route) => route.fulfill({
     status: 200,
     contentType: 'application/json',
@@ -352,6 +391,27 @@ try {
         }
       }
     })
+  }));
+  await failedPage.route('**/studio-api/generation-jobs/job-failed-retry-1', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({
+      ok: true,
+      job: {
+        id: 'job-failed-retry-1',
+        sessionId: 'queue-failed-session',
+        status: 'succeeded',
+        stage: 'succeeded',
+        completed: 1,
+        total: 1,
+        resultUrls: ['/studio-api/history/job-failed-retry-1/assets/0.png']
+      }
+    })
+  }));
+  await failedPage.route('**/studio-api/history/job-failed-retry-1/assets/0.png', (route) => route.fulfill({
+    status: 200,
+    contentType: 'image/png',
+    body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l0X9WQAAAABJRU5ErkJggg==', 'base64')
   }));
   await failedPage.addInitScript(() => {
     localStorage.setItem('auth_token', 'queue-smoke-token');
@@ -389,6 +449,26 @@ try {
   assert(!failedResult.queueItems[0]?.text.includes('ORIGIN_NOT_ALLOWED'), 'Failed queue card exposed the raw upstream error instead of a readable explanation.', failedResult);
   assert(failedResult.storedStatus === 'failed', 'Failed queue status was not saved back into the current session cache.', failedResult);
   assert(failedSessionSaveCount >= 1, 'Failed queue snapshot was not saved back to the history service.', { failedSessionSaveCount });
+  await failedPage.locator('.bottomComposerInput textarea').fill('A retry after a restored failed generation should submit a fresh service job.');
+  await failedPage.locator('.composerGenerateAction').click();
+  await failedPage.waitForFunction(() => {
+    const stored = JSON.parse(localStorage.getItem('image-sub2api-studio:current-session:v1') || '{}');
+    return stored.status === 'success' && stored.canvasNodes?.length >= 1;
+  }, null, { timeout: 10000 });
+  const failedRetryResult = await failedPage.evaluate(() => {
+    const stored = JSON.parse(localStorage.getItem('image-sub2api-studio:current-session:v1') || '{}');
+    return {
+      status: stored.status || '',
+      canvasNodes: stored.canvasNodes?.length || 0,
+      hasRegenerateDialog: Boolean(document.querySelector('.regenerateDialogBackdrop')),
+      body: document.body.innerText.slice(0, 1800)
+    };
+  });
+  assert(failedRetryCreateCount === 1, 'Main generate action in a restored failed state did not create exactly one fresh service job.', { failedRetryCreateCount, failedRetryRequests, failedRetryResult });
+  assert(failedRetryRequests[0]?.request?.route === 'generations', 'Retry from the main generate action did not use the image generations route.', { failedRetryRequests, failedRetryResult });
+  assert(failedRetryRequests[0]?.request?.model === 'gpt-image-2', 'Retry from the main generate action did not preserve the image model.', { failedRetryRequests, failedRetryResult });
+  assert(!failedRetryResult.hasRegenerateDialog, 'Main generate action opened the regenerate dialog instead of submitting the service job.', failedRetryResult);
+  assert(failedRetryResult.status === 'success' && failedRetryResult.canvasNodes >= 1, 'Fresh service job after restored failure did not restore a result into the canvas.', failedRetryResult);
   await failedPage.close();
 
   const runningPage = await browser.newPage({ viewport: { width: 1440, height: 980 } });
@@ -663,11 +743,13 @@ try {
     localQueuedScreenshotPath,
     jobPollCount,
     sessionSaveCount,
+    failedRetryCreateCount,
     runningPollCount,
     runningCancelCount,
     localJobCreateCount,
     result,
     failedResult,
+    failedRetryRequests,
     runningResult,
     localQueuedResult
   }, null, 2));

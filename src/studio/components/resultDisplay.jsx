@@ -1,5 +1,6 @@
 import { Copy, Download, ImageIcon, Video, X } from 'lucide-react';
 import { PromptSectionList } from './promptTools.jsx';
+import { ProtectedStudioImage } from './media.jsx';
 import {
   buildStudioDownloadFilename,
   formatHistoryTime,
@@ -7,10 +8,11 @@ import {
   resultExtension,
   resultVideoExtension
 } from '../util/resultFiles.js';
+import { displayResultUrl } from '../util/assets.js';
 
-export function Lightbox({ url, index, outputFormat = 'png', downloadMeta, onClose, t = (key, fallback) => fallback || key }) {
+export function Lightbox({ url, fallbackSrc = '', index, outputFormat = 'png', downloadMeta, onClose, t = (key, fallback) => fallback || key }) {
   if (!url) return null;
-  const isReferencePreview = downloadMeta?.mode === 'reference';
+  const isReferencePreview = downloadMeta?.mode === 'reference' || downloadMeta?.mode === 'library-reference';
   const extension = resultExtension(url, outputFormat);
   const downloadName = buildStudioDownloadFilename({
     ...(downloadMeta || {}),
@@ -19,6 +21,7 @@ export function Lightbox({ url, index, outputFormat = 'png', downloadMeta, onClo
     extension
   });
   const promptText = downloadMeta?.prompt || downloadMeta?.generationPrompt || '';
+  const displayUrl = displayResultUrl(url);
   const meta = [
     downloadMeta?.providerId,
     downloadMeta?.size,
@@ -26,6 +29,7 @@ export function Lightbox({ url, index, outputFormat = 'png', downloadMeta, onClo
     downloadMeta?.quality ? downloadMeta.quality : '',
     downloadMeta?.createdAt ? formatHistoryTime(downloadMeta.createdAt) : ''
   ].filter(Boolean);
+  const referenceLabel = downloadMeta?.title || downloadMeta?.label || t('references.referenceIndex', '参考 {index}', { index: index + 1 });
   return (
     <div className="lightboxOverlay" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose();
@@ -35,13 +39,19 @@ export function Lightbox({ url, index, outputFormat = 'png', downloadMeta, onClo
           <X size={18} />
         </button>
         <div className="lightboxImageStage">
-          <img src={url} alt={`${isReferencePreview ? t('references.title', '参考图') : t('lightbox.imageAlt', '生成结果')} ${index + 1}`} />
+          <ProtectedStudioImage
+            src={url}
+            fallbackSrc={fallbackSrc}
+            alt={`${isReferencePreview ? t('references.title', '参考图') : t('lightbox.imageAlt', '生成结果')} ${index + 1}`}
+            fallback={<ImageIcon size={24} />}
+            rootMargin="0px"
+          />
         </div>
         <aside className="lightboxPromptPanel">
           <div className="lightboxPromptHead">
             <div>
               <span>{isReferencePreview ? t('references.preview', '查看参考图') : t('lightbox.promptLabel', '完整提示词')}</span>
-              <strong>{isReferencePreview ? t('references.referenceIndex', '参考 {index}', { index: index + 1 }) : `#${index + 1}`}</strong>
+              <strong>{isReferencePreview ? referenceLabel : `#${index + 1}`}</strong>
             </div>
             {promptText ? (
               <button type="button" onClick={() => navigator.clipboard?.writeText(promptText)}>
@@ -58,8 +68,8 @@ export function Lightbox({ url, index, outputFormat = 'png', downloadMeta, onClo
           <PromptSectionList prompt={promptText} t={t} />
         </aside>
         <figcaption>
-          <span>{isReferencePreview ? t('references.referenceIndex', '参考 {index}', { index: index + 1 }) : `#${index + 1}`}</span>
-          <a href={url} download={downloadName}>
+          <span>{isReferencePreview ? referenceLabel : `#${index + 1}`}</span>
+          <a href={displayUrl} download={downloadName}>
             <Download size={16} />
             下载
           </a>

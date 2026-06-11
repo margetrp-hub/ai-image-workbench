@@ -347,7 +347,12 @@ async function runScenario(browser, baseUrl, files, viewport, name, options = {}
   assert(result.rects.composer.x >= -1 && result.rects.composer.right <= result.viewport.width + 1, `${name}: composer escaped horizontally.`, result);
   assert(result.rects.composer.bottom <= result.viewport.height + 1, `${name}: composer bottom escaped the viewport.`, result);
   if (result.viewport.width >= 1000) {
-    assert(result.rects.composer.width <= 760, `${name}: expanded composer became visually too wide.`, result);
+    assert(
+      result.rects.composer.width >= (referencesOpen ? 700 : 820),
+      `${name}: expanded composer is still too narrow for the wide workbench layout.`,
+      result
+    );
+    assert(result.rects.composer.width <= 1080, `${name}: expanded composer became visually too wide.`, result);
   }
   assert(result.rects.queueDock, `${name}: generation queue dock was not visible for active queue state.`, result);
   assert(result.rects.queueItem, `${name}: generation queue item was not visible.`, result);

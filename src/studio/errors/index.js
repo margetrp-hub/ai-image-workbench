@@ -4,3 +4,4 @@
 // 后续任务可在此追加更多归一化错误工具。
 
 export * from './translations.js';
+export * from './catalog.js';
