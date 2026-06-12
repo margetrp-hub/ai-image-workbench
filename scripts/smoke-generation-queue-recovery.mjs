@@ -182,7 +182,7 @@ try {
   let sessionSaveCount = 0;
 
   await installCommonRoutes(page);
-  await page.route('**/studio-api/session', async (route) => {
+  await page.route('**/studio-api/session**', async (route) => {
     if (route.request().method() === 'POST') {
       sessionSaveCount += 1;
       const body = route.request().postDataJSON();
@@ -298,7 +298,7 @@ try {
   let failedRetryCreateCount = 0;
   const failedRetryRequests = [];
   await installCommonRoutes(failedPage);
-  await failedPage.route('**/studio-api/session', async (route) => {
+  await failedPage.route('**/studio-api/session**', async (route) => {
     if (route.request().method() === 'POST') {
       failedSessionSaveCount += 1;
       const body = route.request().postDataJSON();
@@ -475,7 +475,7 @@ try {
   let runningCancelCount = 0;
   let runningPollCount = 0;
   await installCommonRoutes(runningPage);
-  await runningPage.route('**/studio-api/session', async (route) => {
+  await runningPage.route('**/studio-api/session**', async (route) => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON();
       return route.fulfill({
@@ -613,7 +613,7 @@ try {
   const localQueuedPage = await localQueuedContext.newPage();
   let localJobCreateCount = 0;
   await installCommonRoutes(localQueuedPage);
-  await localQueuedPage.route('**/studio-api/session', async (route) => {
+  await localQueuedPage.route('**/studio-api/session**', async (route) => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON();
       return route.fulfill({

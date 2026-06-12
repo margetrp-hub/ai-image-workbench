@@ -1652,21 +1652,25 @@ export class StudioHistoryClient {
     return payload.inspiration || null;
   }
 
-  async getCurrentSession() {
-    const payload = await this.request('/session');
+  async getCurrentSession(sessionId = '') {
+    const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+    const payload = await this.request(`/session${query}`);
     return payload.session || null;
   }
 
   async saveCurrentSession(session) {
-    const payload = await this.request('/session', {
+    const sessionId = String(session?.sessionId || '').trim();
+    const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+    const payload = await this.request(`/session${query}`, {
       method: 'POST',
       body: JSON.stringify(session)
     });
     return payload.session || session;
   }
 
-  async clearCurrentSession() {
-    await this.request('/session', { method: 'DELETE' });
+  async clearCurrentSession(sessionId = '') {
+    const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+    await this.request(`/session${query}`, { method: 'DELETE' });
   }
 
   async createGenerationJob(job) {

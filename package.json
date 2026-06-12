@@ -36,6 +36,7 @@
     "preview": "vite preview",
     "smoke:studio": "node scripts/smoke-studio-page.mjs",
     "smoke:history": "npm exec --yes --package=playwright -- node scripts/smoke-history-session.mjs",
+    "smoke:session:isolation": "node scripts/smoke-session-isolation.mjs",
     "smoke:history:idb": "npm exec --yes --package=playwright -- node scripts/smoke-history-indexeddb.mjs",
     "smoke:gateway:auth": "node scripts/smoke-gateway-auth-service.mjs",
     "smoke:projects": "npm exec --yes --package=playwright -- node scripts/smoke-project-session-grouping.mjs",

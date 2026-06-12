@@ -18,7 +18,7 @@ const SESSION_NODE_LIMIT = Number(process.env.STUDIO_SESSION_NODE_LIMIT || 80);
 const SESSION_URL_LIMIT = Number(process.env.STUDIO_SESSION_URL_LIMIT || 24);
 const SESSION_QUEUE_LIMIT = Number(process.env.STUDIO_SESSION_QUEUE_LIMIT || 12);
 const SESSION_MESSAGE_LIMIT = Number(process.env.STUDIO_SESSION_MESSAGE_LIMIT || 24);
-const SESSION_ASSET_ID = 'session-current';
+const SESSION_ASSET_PREFIX = 'session-';
 const JOB_LIMIT = Number(process.env.STUDIO_JOB_LIMIT || 120);
 const JOB_TIMEOUT_MS = Number(process.env.STUDIO_JOB_TIMEOUT_MS || 45 * 60 * 1000);
 const JOB_CONCURRENCY = Math.max(1, Math.min(6, Number(process.env.STUDIO_JOB_CONCURRENCY || 1)));
@@ -384,6 +384,20 @@ function sessionPath(auth) {
   return path.join(auth.userDir, 'session.json');
 }
 
+function sessionPathForId(auth, sessionId = '') {
+  const safeId = text(sessionId, 120);
+  return safeId ? path.join(auth.userDir, 'sessions', `${safeId}.json`) : sessionPath(auth);
+}
+
+function sessionsDir(auth) {
+  return path.join(auth.userDir, 'sessions');
+}
+
+function sessionAssetId(sessionId = '') {
+  const safeId = text(sessionId, 120);
+  return safeId ? `${SESSION_ASSET_PREFIX}${safeId}` : 'session-current';
+}
+
 function jobsPath(auth) {
   return path.join(auth.userDir, 'jobs.json');
 }
@@ -408,9 +422,9 @@ async function writeRecords(auth, records) {
   await fs.writeFile(recordsPath(auth), JSON.stringify(records.slice(0, HISTORY_LIMIT), null, 2));
 }
 
-async function readSession(auth) {
+async function readSession(auth, sessionId = '') {
   try {
-    const raw = await fs.readFile(sessionPath(auth), 'utf8');
+    const raw = await fs.readFile(sessionPathForId(auth, sessionId), 'utf8');
     const parsed = parseJsonText(raw);
     return parsed && typeof parsed === 'object' ? parsed : null;
   } catch (error) {
@@ -419,9 +433,26 @@ async function readSession(auth) {
   }
 }
 
-async function writeSession(auth, session) {
+async function writeSession(auth, session, sessionId = '') {
   await ensureUserDirs(auth);
-  await fs.writeFile(sessionPath(auth), JSON.stringify(session, null, 2));
+  if (sessionId) await fs.mkdir(path.dirname(sessionPathForId(auth, sessionId)), { recursive: true });
+  await fs.writeFile(sessionPathForId(auth, sessionId), JSON.stringify(session, null, 2));
+}
+
+async function readSessionSnapshot(auth) {
+  const legacy = await readSession(auth);
+  const sessions = [];
+  const entries = await fs.readdir(sessionsDir(auth), { withFileTypes: true }).catch((error) => {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  });
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+    const sessionId = entry.name.slice(0, -5);
+    const session = await readSession(auth, sessionId);
+    if (session) sessions.push(session);
+  }
+  return { legacy, sessions };
 }
 
 function jobRuntimeKey(auth, jobId) {
@@ -580,9 +611,9 @@ async function readAssetSnapshot(auth) {
 }
 
 async function buildUserBackup(auth, reason = 'manual') {
-  const [records, session, jobs, assets] = await Promise.all([
+  const [records, sessionSnapshot, jobs, assets] = await Promise.all([
     readRecords(auth),
-    readSession(auth),
+    readSessionSnapshot(auth),
     readJobs(auth),
     readAssetSnapshot(auth)
   ]);
@@ -601,11 +632,13 @@ async function buildUserBackup(auth, reason = 'manual') {
       records: records.length,
       jobs: jobs.length,
       assets: assets.length,
-      hasSession: Boolean(session)
+      hasSession: Boolean(sessionSnapshot.legacy) || sessionSnapshot.sessions.length > 0,
+      sessions: sessionSnapshot.sessions.length
     },
     data: {
       records,
-      session,
+      session: sessionSnapshot.legacy,
+      sessions: sessionSnapshot.sessions,
       jobs,
       assets
     }
@@ -637,6 +670,7 @@ function validateUserBackup(payload) {
   return {
     records: Array.isArray(data.records) ? data.records : [],
     session: data.session && typeof data.session === 'object' ? data.session : null,
+    sessions: Array.isArray(data.sessions) ? data.sessions.filter((session) => session && typeof session === 'object') : [],
     jobs: Array.isArray(data.jobs) ? data.jobs : [],
     assets: Array.isArray(data.assets) ? data.assets : []
   };
@@ -667,6 +701,11 @@ async function restoreUserBackup(auth, payload) {
   } else {
     await fs.rm(sessionPath(auth), { force: true });
   }
+  await fs.rm(sessionsDir(auth), { recursive: true, force: true });
+  for (const session of snapshot.sessions) {
+    const sessionId = text(session.sessionId, 120);
+    if (sessionId) await writeSession(auth, session, sessionId);
+  }
   await writeJobs(auth, snapshot.jobs);
   await restoreAssetSnapshot(auth, snapshot.assets);
   return {
@@ -677,7 +716,8 @@ async function restoreUserBackup(auth, payload) {
       records: snapshot.records.length,
       jobs: snapshot.jobs.length,
       assets: snapshot.assets.length,
-      hasSession: Boolean(snapshot.session)
+      hasSession: Boolean(snapshot.session) || snapshot.sessions.length > 0,
+      sessions: snapshot.sessions.length
     }
   };
 }
@@ -748,8 +788,8 @@ async function storeResultUrl(auth, recordId, value, index) {
   return writeAssetBuffer(auth, recordId, buffer, match[1], index);
 }
 
-async function storeSessionUrl(auth, value, index) {
-  return storeResultUrl(auth, SESSION_ASSET_ID, value, index);
+async function storeSessionUrl(auth, value, index, assetId = sessionAssetId()) {
+  return storeResultUrl(auth, assetId, value, index);
 }
 
 async function readJsonFile(filePath, fallback = {}) {
@@ -951,11 +991,11 @@ function sanitizeDownloadMeta(value) {
   };
 }
 
-async function sanitizeSessionUrls(auth, values, assetIndex) {
+async function sanitizeSessionUrls(auth, values, assetIndex, assetId = sessionAssetId()) {
   const urls = [];
   const source = Array.isArray(values) ? values.slice(0, SESSION_URL_LIMIT) : [];
   for (const value of source) {
-    const stored = await storeSessionUrl(auth, value, assetIndex.current);
+    const stored = await storeSessionUrl(auth, value, assetIndex.current, assetId);
     assetIndex.current += 1;
     if (stored) urls.push(stored);
     else if (/^(https?:|blob:)/i.test(String(value || ''))) urls.push(String(value));
@@ -963,7 +1003,7 @@ async function sanitizeSessionUrls(auth, values, assetIndex) {
   return urls;
 }
 
-async function sanitizeCanvasNodes(auth, nodes, assetIndex) {
+async function sanitizeCanvasNodes(auth, nodes, assetIndex, assetId = sessionAssetId()) {
   const source = Array.isArray(nodes) ? nodes.slice(0, SESSION_NODE_LIMIT) : [];
   const result = [];
   for (const node of source) {
@@ -971,7 +1011,7 @@ async function sanitizeCanvasNodes(auth, nodes, assetIndex) {
     const rawUrl = String(node.url || '');
     let url = '';
     if (rawUrl) {
-      url = await storeSessionUrl(auth, rawUrl, assetIndex.current);
+      url = await storeSessionUrl(auth, rawUrl, assetIndex.current, assetId);
       assetIndex.current += 1;
       if (!url && /^(https?:|blob:)/i.test(rawUrl)) url = rawUrl;
     }
@@ -1065,10 +1105,11 @@ function sanitizeGenerationQueue(items) {
 }
 
 async function pruneSessionAssets(auth, session) {
-  const assetDir = path.join(auth.userDir, 'assets', SESSION_ASSET_ID);
+  const assetId = sessionAssetId(session?.sessionId);
+  const assetDir = path.join(auth.userDir, 'assets', assetId);
   const referenced = new Set();
   const collect = (url) => {
-    const match = String(url || '').match(new RegExp(`/studio-api/history/${SESSION_ASSET_ID}/assets/([0-9]{1,3}\\.(?:png|jpg|webp))$`));
+    const match = String(url || '').match(new RegExp(`/studio-api/history/${assetId}/assets/([0-9]{1,3}\\.(?:png|jpg|webp))$`));
     if (match) referenced.add(match[1]);
   };
   for (const url of session.results || []) collect(url);
@@ -1081,12 +1122,14 @@ async function pruneSessionAssets(auth, session) {
 
 async function sanitizeSession(auth, body) {
   const assetIndex = { current: 0 };
-  const results = await sanitizeSessionUrls(auth, body.results, assetIndex);
+  const sessionId = text(body.sessionId, 120);
+  const assetId = sessionAssetId(sessionId);
+  const results = await sanitizeSessionUrls(auth, body.results, assetIndex, assetId);
   const videoResults = Array.isArray(body.videoResults) ? body.videoResults.slice(0, SESSION_URL_LIMIT).map((value) => text(value, 1200)).filter(Boolean) : [];
-  const canvasNodes = await sanitizeCanvasNodes(auth, body.canvasNodes, assetIndex);
+  const canvasNodes = await sanitizeCanvasNodes(auth, body.canvasNodes, assetIndex, assetId);
   const session = {
     updatedAt: new Date().toISOString(),
-    sessionId: text(body.sessionId, 120),
+    sessionId,
     mode: text(body.mode || 'image', 40),
     prompt: text(body.prompt, 12000),
     model: text(body.model, 160),
@@ -1742,20 +1785,28 @@ async function handler(req, res) {
     }
 
     if (req.method === 'GET' && parts[0] === 'studio-api' && parts[1] === 'session' && parts.length === 2) {
-      const session = await readSession(auth);
+      const sessionId = text(url.searchParams.get('sessionId'), 120);
+      let session = await readSession(auth, sessionId);
+      if (sessionId && !session) {
+        const legacySession = await readSession(auth);
+        session = legacySession?.sessionId === sessionId ? legacySession : null;
+      }
       return sendJson(res, 200, { ok: true, session });
     }
 
     if (req.method === 'POST' && parts[0] === 'studio-api' && parts[1] === 'session' && parts.length === 2) {
       const body = await readJsonBody(req);
-      const session = await sanitizeSession(auth, body);
-      await writeSession(auth, session);
+      const requestedSessionId = text(url.searchParams.get('sessionId'), 120);
+      const session = await sanitizeSession(auth, { ...body, sessionId: body?.sessionId || requestedSessionId });
+      const sessionId = text(session.sessionId || requestedSessionId, 120);
+      await writeSession(auth, session, sessionId);
       return sendJson(res, 200, { ok: true, session });
     }
 
     if (req.method === 'DELETE' && parts[0] === 'studio-api' && parts[1] === 'session' && parts.length === 2) {
-      await fs.rm(sessionPath(auth), { force: true });
-      await fs.rm(path.join(auth.userDir, 'assets', SESSION_ASSET_ID), { recursive: true, force: true });
+      const sessionId = text(url.searchParams.get('sessionId'), 120);
+      await fs.rm(sessionPathForId(auth, sessionId), { force: true });
+      await fs.rm(path.join(auth.userDir, 'assets', sessionAssetId(sessionId)), { recursive: true, force: true });
       return sendJson(res, 200, { ok: true });
     }
 

@@ -444,11 +444,18 @@ function clearDraft() {
   localStorage.removeItem(DRAFT_KEY);
 }
 
-function loadCurrentSession() {
+function scopedCurrentSessionKey(sessionId) {
+  return sessionId ? `${CURRENT_SESSION_KEY}:${sessionId}` : CURRENT_SESSION_KEY;
+}
+
+function loadCurrentSession(expectedSessionId = '') {
   try {
-    const session = JSON.parse(localStorage.getItem(CURRENT_SESSION_KEY) || 'null');
+    const scopedRaw = expectedSessionId ? localStorage.getItem(scopedCurrentSessionKey(expectedSessionId)) : '';
+    const session = JSON.parse(scopedRaw || localStorage.getItem(CURRENT_SESSION_KEY) || 'null');
     if (!session || typeof session !== 'object') return null;
-    return normalizeCachedCurrentSession(session);
+    const normalized = normalizeCachedCurrentSession(session);
+    if (expectedSessionId && normalized?.sessionId !== expectedSessionId) return null;
+    return normalized;
   } catch {
     return null;
   }
@@ -463,14 +470,18 @@ function saveCurrentSession(session) {
   };
   try {
     localStorage.setItem(CURRENT_SESSION_KEY, JSON.stringify(nextSession));
+    if (nextSession.sessionId) {
+      localStorage.setItem(scopedCurrentSessionKey(nextSession.sessionId), JSON.stringify(nextSession));
+    }
   } catch {
     // The active canvas is a convenience cache; generation/history still work if storage is full.
   }
   return nextSession;
 }
 
-function clearCurrentSessionCache() {
+function clearCurrentSessionCache(sessionId = '') {
   try {
+    if (sessionId) localStorage.removeItem(scopedCurrentSessionKey(sessionId));
     localStorage.removeItem(CURRENT_SESSION_KEY);
   } catch {
     // A new canvas should still open even if browser storage is unavailable.
@@ -2561,7 +2572,7 @@ function CreationDesk({
   t
 }) {
   const draftRef = useRef(loadDraft());
-  const currentSessionRef = useRef(loadCurrentSession());
+  const currentSessionRef = useRef(loadCurrentSession(sessionId));
   const restoredSession = currentSessionRef.current;
   const sessionCreatedAtRef = useRef(restoredSession?.createdAt || new Date().toISOString());
   const initialParameters = restoredSession?.parameters || draftRef.current || {};
@@ -7338,20 +7349,22 @@ function StudioApp() {
     let active = true;
     setRemoteSessionReady(false);
     const historyClient = new StudioHistoryClient({ session });
-    historyClient.getCurrentSession()
+    historyClient.getCurrentSession(deskSessionId)
       .then((snapshot) => snapshot ? historyClient.resolveSessionAssets(snapshot) : null)
       .then((snapshot) => {
         if (!active) return;
         if (snapshot) {
           const remoteSnapshot = { ...snapshot, sessionId: snapshot.sessionId || deskSessionId };
-          const localSnapshot = loadCurrentSession();
-          const remoteUpdated = Date.parse(remoteSnapshot.updatedAt || '') || 0;
-          const localUpdated = Date.parse(localSnapshot?.updatedAt || '') || 0;
-          if (localUpdated && localUpdated > remoteUpdated && hasMeaningfulSessionContent(localSnapshot)) {
-            setCurrentSessionSnapshot(localSnapshot);
-          } else {
-            const sessionSnapshot = saveCurrentSession(remoteSnapshot);
-            setCurrentSessionSnapshot(sessionSnapshot);
+          if (remoteSnapshot.sessionId === deskSessionId) {
+            const localSnapshot = loadCurrentSession(deskSessionId);
+            const remoteUpdated = Date.parse(remoteSnapshot.updatedAt || '') || 0;
+            const localUpdated = Date.parse(localSnapshot?.updatedAt || '') || 0;
+            if (localUpdated && localUpdated > remoteUpdated && hasMeaningfulSessionContent(localSnapshot)) {
+              setCurrentSessionSnapshot(localSnapshot);
+            } else {
+              const sessionSnapshot = saveCurrentSession(remoteSnapshot);
+              setCurrentSessionSnapshot(sessionSnapshot);
+            }
           }
         }
         setRemoteSession(snapshot);
@@ -7365,7 +7378,7 @@ function StudioApp() {
     return () => {
       active = false;
     };
-  }, [persistenceKey, profile?.id, profile?.email, profile?.username]);
+  }, [deskSessionId, persistenceKey, profile?.id, profile?.email, profile?.username]);
 
   const categoryGroups = useMemo(() => buildCategoryGroups(siteData?.cases || []), [siteData]);
   const visibleCases = useMemo(() => {
@@ -7413,7 +7426,9 @@ function StudioApp() {
     }
     sessionSaveRef.current.lastPayload = '';
     clearDraft();
-    clearCurrentSessionCache();
+    const previousDeskSessionId = deskSessionId;
+    const nextDeskSessionId = `desk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    clearCurrentSessionCache(previousDeskSessionId);
     setCurrentSessionSnapshot(null);
     setRemoteSession(null);
     setSelectedCase(null);
@@ -7422,10 +7437,10 @@ function StudioApp() {
     setQuery('');
     setCategory('All');
     setActiveWorkspace('image');
-    setDeskSessionId(`desk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    setDeskSessionId(nextDeskSessionId);
     const latestSession = loadSession() || session;
     const historyClient = new StudioHistoryClient({ session: latestSession });
-    historyClient.clearCurrentSession().catch(() => {});
+    historyClient.clearCurrentSession(nextDeskSessionId).catch(() => {});
   }
 
   async function refreshProfile() {
