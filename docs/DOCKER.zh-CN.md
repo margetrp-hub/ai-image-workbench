@@ -22,6 +22,7 @@ cp .env.example .env
 STUDIO_PORT=8080
 AI_GATEWAY_UPSTREAM=http://host.docker.internal:8080
 VITE_AI_IMAGE_ROUTE=auto
+STUDIO_VERSION=0.9.8
 ```
 
 `VITE_AI_IMAGE_ROUTE=auto` 的含义是：
@@ -65,6 +66,13 @@ VITE_AI_IMAGE_ROUTE=auto
 
 这样前端会请求当前 Studio 域名下的 `/api`、`/login`、`/v1/images/generations`、`/v1/images/edits` 和提示词助手用到的 `/v1/chat/completions`，再由 Nginx 转发到 `AI_GATEWAY_UPSTREAM`。
 
+启动前建议先做一次静态校验，确认 compose 展开后的端口、volume、healthcheck 和版本号仍然符合生产约定：
+
+```bash
+docker compose --env-file .env.example config
+npm run check:docker
+```
+
 ## 2. 启动
 
 ```bash
@@ -91,12 +99,13 @@ docker compose logs -f studio-history
 curl -I http://localhost:8080/studio/
 curl http://localhost:8080/studio-api/health
 curl -s http://localhost:8080/studio/ | grep 'studio-assets'
+npm run ops:self-check
 ```
 
 预期：
 
 ```json
-{"ok":true}
+{"ok":true,"service":"ai-image-workbench-history","version":"0.9.8"}
 ```
 
 如果要确认静态资源没有被 fallback 成 HTML，可以先从上一条命令里拿到 JS/CSS 文件名，再检查：
@@ -150,13 +159,52 @@ docker run --rm \
 
 ## 4. 更新
 
+生产更新前先备份 `studio-data`。如果已经有可用登录 token/API token，推荐使用服务端备份接口：
+
+```bash
+STUDIO_HISTORY_BASE_URL=https://studio.example.com \
+STUDIO_BACKUP_TOKEN='your-token' \
+npm run ops:backup
+```
+
+Docker volume 级别备份也可以保底使用：
+
+```bash
+docker run --rm \
+  -v image-sub2api-studio_studio-data:/data:ro \
+  -v "$PWD/backups":/backup \
+  alpine tar czf /backup/studio-data-before-upgrade.tgz -C /data .
+```
+
+常规更新：
+
 ```bash
 git pull
+npm run check:docker
 docker compose build
 docker compose up -d
+npm run ops:self-check
 ```
 
 只要不删除 `studio-data` volume，历史图库、当前画布和已本地化的生成图片都会保留。
+
+如果服务器 `.env` 已经配置好 `STUDIO_HISTORY_BASE_URL`、`STUDIO_PUBLIC_BASE_URL` 和 `STUDIO_BACKUP_TOKEN`，可以用升级脚本把“备份 -> 拉取/构建 -> 启动 -> 自检”串起来：
+
+```bash
+npm run ops:upgrade
+```
+
+`ops:upgrade` 默认会先运行 `ops:backup`，备份失败会中止升级。只有在你已经通过 volume 快照或其他方式完成备份时，才显式跳过：
+
+```bash
+STUDIO_SKIP_BACKUP=true npm run ops:upgrade
+```
+
+本仓库默认使用本地构建镜像 `ai-image-workbench-web:local` 和 `ai-image-workbench-history:local`。如果没有远端镜像仓库，`docker compose pull` 可能失败；这种场景可以显式跳过 pull：
+
+```bash
+STUDIO_SKIP_PULL=true npm run ops:upgrade
+```
 
 不要用 zip 包更新 Docker 容器里的前端。Docker 模式的更新入口是 Git 仓库和镜像重建；传统 VPS 模式才使用 `ai-image-workbench-core-update-*.zip` 和 `ai-image-workbench-service-update-*.zip`。旧名称 `image-sub2api-studio-core-update-*.zip` 和 `image-sub2api-studio-service-update-*.zip` 仍会作为兼容副本生成。
 

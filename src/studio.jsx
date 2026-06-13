@@ -138,8 +138,10 @@ import {
   GENERATION_TIMEOUT_MS,
   activeGenerationQueueCount,
   appendGenerationQueueTask,
+  findDuplicateActiveGenerationTask,
   firstQueuedGenerationTask,
   generationErrorMessage,
+  generationTaskFingerprint,
   isActiveServerJobStatus,
   isFinalServerJobStatus,
   isRestorableQueueItem,
@@ -661,6 +663,7 @@ function serializeGenerationQueueItem(item) {
     selectedCanvasNodeId: String(item.selectedCanvasNodeId || ''),
     selectedCanvasNodeSnapshot: item.selectedCanvasNodeSnapshot || null,
     referencesOpen: Boolean(item.referencesOpen),
+    fingerprint: String(item.fingerprint || '').slice(0, 16000),
     summary: String(item.summary || item.prompt || '').slice(0, 240),
     restorable: item.restorable !== false && !['edit', 'mask', 'video'].includes(item.mode),
     serverJobId: item.serverJobId || '',
@@ -1291,8 +1294,9 @@ function revokeBlobUrls(urls) {
 }
 
 function providerLabel(settings, apiKey) {
-  if (settings.apiKeySource === 'manual') return settings.manualGatewayBaseUrl ? '自定义 API' : '自定义连接';
-  return apiKey?.name || 'Gateway Account';
+  const provider = getImageProvider(settings.providerId, settings.apiKeySource);
+  if (settings.apiKeySource === 'manual') return provider?.label || (settings.manualGatewayBaseUrl ? 'Custom API' : 'Manual provider');
+  return apiKey?.name || provider?.label || 'Gateway Account';
 }
 
 function maskApiKey(value) {
@@ -1374,6 +1378,14 @@ function imageFallback(item) {
 
 function templatePreviewImage(item) {
   return imageFallback(item) || templateThumbnail(item);
+}
+
+function templateReferenceThumb(item) {
+  return templateThumbnail(item) || templatePreviewImage(item);
+}
+
+function templateReferenceFullImage(item) {
+  return templatePreviewImage(item) || templateThumbnail(item);
 }
 
 function handleImageFallback(event, fallback) {
@@ -1563,11 +1575,16 @@ function usesGatewayAccount(settings) {
   return settings?.apiKeySource !== 'manual';
 }
 
+function defaultProviderGatewayBaseUrl(settings) {
+  if (settings?.providerId === 'official-openai') return 'https://api.openai.com/v1';
+  return getConfiguredBaseUrls().gatewayBaseUrl;
+}
+
 function resolveProviderRequest(settings, apiKey) {
   if (settings.apiKeySource === 'manual') {
     return {
       apiKey: settings.manualApiKey.trim(),
-      gatewayBaseUrl: settings.manualGatewayBaseUrl.trim() || getConfiguredBaseUrls().gatewayBaseUrl,
+      gatewayBaseUrl: settings.manualGatewayBaseUrl.trim() || defaultProviderGatewayBaseUrl(settings),
       route: settings.route || 'auto',
       responsesModel: settings.responsesModel,
       partialImages: settings.partialImages
@@ -1903,7 +1920,7 @@ function GalleryWorkspacePanel({
   const visibleHistoryItems = historySessionItems.slice(0, visibleLimit);
   const historyLocalHasMore = visibleLimit < historySessionItems.length;
   const selectedTemplate = selected && selected.kind !== 'video-inspiration' ? selected : null;
-  const selectedTemplateImage = selectedTemplate ? templatePreviewImage(selectedTemplate) : '';
+  const selectedTemplateImage = selectedTemplate ? templateReferenceFullImage(selectedTemplate) : '';
   const selectedTemplateFallback = selectedTemplate ? templateThumbnail(selectedTemplate) : '';
   const selectedTemplatePrompt = selectedTemplate?.promptPreview || selectedTemplate?.prompt || selectedTemplate?.summary || '';
   const selectedHistoryItem = useMemo(() => {
@@ -1920,7 +1937,16 @@ function GalleryWorkspacePanel({
   }, [category, query, activeKind, type]);
 
   const selectLibraryItem = (item) => {
+    if (isVideo) {
+      onSelect(item);
+      return;
+    }
+    openTemplatePreview(item);
+  };
+  const useLibraryItem = (item) => {
     onSelect(item);
+    onAppendTemplate?.(item);
+    onOpenWorkspace?.(item?.kind === 'video-inspiration' ? 'video' : 'image');
   };
   const openTemplatePreview = (item) => {
     const preview = templatePreviewImage(item);
@@ -2080,7 +2106,7 @@ function GalleryWorkspacePanel({
             <strong>{selectedTemplate.title}</strong>
             <p>{selectedTemplatePrompt || t('gallery.selectedNoPrompt', '点击选用后会读取完整提示词并带入底部对话框。')}</p>
           </div>
-          <button type="button" className="primaryAction galleryUseTemplateButton" onClick={() => onAppendTemplate?.(selectedTemplate)}>
+          <button type="button" className="primaryAction galleryUseTemplateButton" onClick={() => useLibraryItem(selectedTemplate)}>
             <Check size={15} />
             {t('gallery.useTemplate', '选用')}
           </button>
@@ -2122,7 +2148,7 @@ function GalleryWorkspacePanel({
                 onPreview={openTemplatePreview}
                 favorite={favoriteTemplates.has(templateKey(item))}
                 onToggleFavorite={onToggleTemplateFavorite}
-                onAppend={onAppendTemplate}
+                onAppend={useLibraryItem}
                 t={t}
                 key={item.id}
               />
@@ -4631,6 +4657,24 @@ function CreationDesk({
       selectedCanvasNodeId: overrides.selectedCanvasNodeId ?? selectedCanvasNodeId,
       selectedCanvasNodeSnapshot: taskSelectedCanvasNode,
       referencesOpen: overrides.referencesOpen ?? layoutSections.references,
+      fingerprint: generationTaskFingerprint({
+        sessionId,
+        mode: taskMode,
+        route: taskMode === 'edit' || taskMode === 'mask' ? 'edits' : 'generations',
+        providerId: providerSettings.providerId,
+        apiKeySource: providerSettings.apiKeySource,
+        model,
+        prompt: basePrompt,
+        size,
+        quality,
+        resolutionTier,
+        outputFormat,
+        moderation,
+        count: countValue,
+        selectedCanvasNodeId: overrides.selectedCanvasNodeId ?? selectedCanvasNodeId,
+        referenceCount: taskReferenceItems.length,
+        hasMask: taskMode === 'mask'
+      }),
       summary: basePrompt || prompt.trim() || selectedCanvasNode?.prompt?.trim() || '未填写提示词'
     };
   }
@@ -4713,6 +4757,13 @@ function CreationDesk({
     if (activeCount >= GENERATION_QUEUE_LIMIT) {
       setStatus('error');
       setMessage(t('statusMessages.queueLimit', '当前队列已满，最多保留 {count} 个待生成任务。', { count: GENERATION_QUEUE_LIMIT }));
+      return;
+    }
+    const duplicateTask = findDuplicateActiveGenerationTask(generationQueueRef.current, task.fingerprint);
+    if (duplicateTask) {
+      setStatus('error');
+      setMessage(t('statusMessages.duplicateGenerationTask', '相同的生成请求已经在队列中，请等它完成或先取消后再提交。'));
+      showComposerForGeneration();
       return;
     }
     showComposerForGeneration();
@@ -5107,6 +5158,24 @@ function CreationDesk({
               providerLabel: providerLabel(providerSettings, apiKey),
               mode: activeMode,
               route: shouldUseImageEdits ? 'edits' : 'generations',
+              fingerprint: generationTaskFingerprint({
+                sessionId,
+                mode: activeMode,
+                route: shouldUseImageEdits ? 'edits' : 'generations',
+                providerId: providerSettings.providerId,
+                apiKeySource: providerSettings.apiKeySource,
+                model: activeModel,
+                prompt: effectivePrompt,
+                size: normalizedActiveSize,
+                quality: normalizedActiveQuality,
+                resolutionTier: normalizedActiveResolutionTier,
+                outputFormat: normalizedActiveOutputFormat,
+                moderation: normalizedActiveModeration,
+                count: activeCount,
+                parentCanvasNodeId: lineageParentId,
+                referenceCount: editReferenceFiles.length,
+                hasMask: Boolean(maskFile)
+              }),
               model: activeModel,
               prompt: basePrompt,
               generationPrompt: effectivePrompt,
@@ -5392,7 +5461,11 @@ function CreationDesk({
   };
   const maskSourcePreview = referencePreviews[0] || (mode === 'mask' && selectedCanvasNode && selectedCanvasNode.kind !== 'video' ? selectedCanvasNode.url : '');
   const maskSourceFile = referenceFiles[0] || (maskSourcePreview ? { name: selectedCanvasNode ? `#${selectedCanvasNode.canvasIndex || 1}.png` : 'reference.png' } : null);
-  const selectedLibraryReferenceUrl = mode === 'image' && selectedCase ? assetPath(templatePreviewImage(selectedCase)) : '';
+  const selectedLibraryReferenceThumb = mode === 'image' && selectedCase ? assetPath(templateReferenceThumb(selectedCase)) : '';
+  const selectedLibraryReferenceFull = mode === 'image' && selectedCase ? assetPath(templateReferenceFullImage(selectedCase)) : '';
+  const selectedLibraryReferenceFallback = selectedLibraryReferenceThumb && selectedLibraryReferenceThumb !== selectedLibraryReferenceFull
+    ? selectedLibraryReferenceThumb
+    : '';
   const selectedLibraryReferenceTitle = selectedCase?.title || t('references.libraryPreview', '灵感图');
   const referenceSideCount = mode === 'mask'
     ? (maskSourcePreview ? 1 : 0)
@@ -5872,14 +5945,15 @@ function CreationDesk({
                 ) : null}
               </div>
             ) : (
-              <div className={`referenceSideBody ${referencePreviews.length ? 'hasReferenceItems' : ''} ${selectedLibraryReferenceUrl ? 'hasLibraryReference' : ''}`}>
-                {selectedLibraryReferenceUrl ? (
+              <div className={`referenceSideBody ${referencePreviews.length ? 'hasReferenceItems' : ''} ${selectedLibraryReferenceThumb ? 'hasLibraryReference' : ''}`}>
+                {selectedLibraryReferenceThumb ? (
                   <figure className="libraryReferencePreview">
                     <button
                       type="button"
                       className="referencePreviewButton"
                       onClick={() => setPreviewImage({
-                        url: selectedLibraryReferenceUrl,
+                        url: selectedLibraryReferenceFull || selectedLibraryReferenceThumb,
+                        fallbackSrc: selectedLibraryReferenceFallback,
                         index: 0,
                         downloadMeta: {
                           mode: 'library-reference',
@@ -5890,7 +5964,7 @@ function CreationDesk({
                       })}
                       aria-label={t('references.preview', '查看参考图')}
                     >
-                      <LazyImage src={selectedLibraryReferenceUrl} alt={selectedCase?.imageAlt || selectedLibraryReferenceTitle} />
+                      <LazyImage src={selectedLibraryReferenceThumb} alt={selectedCase?.imageAlt || selectedLibraryReferenceTitle} />
                     </button>
                     <figcaption>
                       <span>{t('references.libraryPreview', '灵感图')}</span>
@@ -6801,6 +6875,7 @@ function CreationDesk({
       ) : null}
       <Lightbox
         url={previewImage?.url}
+        fallbackSrc={previewImage?.fallbackSrc || ''}
         index={previewImage?.index || 0}
         outputFormat={outputFormat}
         downloadMeta={previewImage?.downloadMeta || currentDownloadMeta}
@@ -6862,7 +6937,7 @@ function SettingsPanel({
     responses: modelOptions.responses?.length || 0,
     video: modelOptions.video?.length || 0
   });
-  const providerChoiceOrder = ['gateway-account', 'openai-compatible', 'newapi-compatible', 'nano-banana-compatible', 'video-compatible'];
+  const providerChoiceOrder = ['official-openai', 'openai-compatible', 'newapi-compatible', 'gateway-account', 'nano-banana-compatible', 'video-compatible'];
   const providerChoices = [...IMAGE_PROVIDER_REGISTRY]
     .sort((left, right) => providerChoiceOrder.indexOf(left.id) - providerChoiceOrder.indexOf(right.id))
     .map((provider) => ({
@@ -6970,7 +7045,7 @@ function SettingsPanel({
               <input
                 value={providerSettings.manualGatewayBaseUrl}
                 onChange={(event) => onProviderChange({ ...providerSettings, manualGatewayBaseUrl: event.target.value })}
-                placeholder={getConfiguredBaseUrls().gatewayBaseUrl}
+                placeholder={defaultProviderGatewayBaseUrl(providerSettings)}
               />
             </label>
             <label>
@@ -7296,6 +7371,31 @@ function StudioApp() {
     providerSettings.manualGatewayBaseUrl,
     apiKey?.key,
     session?.accessToken
+  ]);
+
+  useEffect(() => {
+    if (modelsStatus !== 'ready') return;
+    const imageModel = modelOptions.image?.[0]?.id || '';
+    const responseModel = modelOptions.responses?.find((item) => !modelLooksLikeImage(item))?.id || '';
+    const videoModel = modelOptions.video?.[0]?.id || '';
+    if (!imageModel && !responseModel && !videoModel) return;
+    const patch = {};
+    if (!String(providerSettings.imageGenerationModel || '').trim() && imageModel) patch.imageGenerationModel = imageModel;
+    if (!String(providerSettings.imageEditModel || '').trim() && imageModel) patch.imageEditModel = imageModel;
+    if (!String(providerSettings.responsesModel || '').trim() && responseModel) patch.responsesModel = responseModel;
+    if (!String(providerSettings.videoModel || '').trim() && videoModel) patch.videoModel = videoModel;
+    if (Object.keys(patch).length) {
+      handleProviderChange({ ...providerSettings, ...patch });
+    }
+  }, [
+    modelsStatus,
+    modelOptions.image,
+    modelOptions.responses,
+    modelOptions.video,
+    providerSettings.imageGenerationModel,
+    providerSettings.imageEditModel,
+    providerSettings.responsesModel,
+    providerSettings.videoModel
   ]);
 
   useEffect(() => {

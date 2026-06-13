@@ -93,6 +93,15 @@ function normalizeResponsesModel(value) {
   return model === 'gpt-5.4' ? DEFAULT_RESPONSES_MODEL : model;
 }
 
+function providerDefaultModel(provider, key, fallback = '') {
+  const slotDefault = provider?.descriptor?.modelSlots?.find((slot) => slot?.key === key)?.defaultModel;
+  if (slotDefault) return slotDefault;
+  if (key === 'imageGenerationModel' || key === 'imageEditModel') return provider?.parameters?.defaultImageModel || fallback;
+  if (key === 'videoModel') return provider?.parameters?.defaultVideoModel || fallback;
+  if (key === 'responsesModel') return provider?.parameters?.defaultAssistantModel || fallback;
+  return fallback;
+}
+
 function imageMimeType(format) {
   const normalized = String(format || 'png').toLowerCase();
   if (normalized === 'jpg' || normalized === 'jpeg') return 'image/jpeg';
@@ -1481,7 +1490,7 @@ export class AiGatewayClient {
           outputFormat: normalizedParameters.outputFormat,
           moderation: normalizedParameters.moderation,
           n: normalizedParameters.n,
-          model,
+          model: String(model || this.providerSettings.imageGenerationModel || providerDefaultModel(adapter.provider, 'imageGenerationModel', 'gpt-image-2')).trim(),
           referenceImages,
           onPartial,
           onProgress,
@@ -1500,7 +1509,7 @@ export class AiGatewayClient {
 
     return this.generateImageViaLegacy({
       apiKey,
-      model,
+      model: String(model || this.providerSettings.imageGenerationModel || providerDefaultModel(adapter.provider, 'imageGenerationModel', 'gpt-image-2')).trim(),
       prompt,
       size: normalizedParameters.size,
       quality: normalizedParameters.quality,
@@ -1533,7 +1542,7 @@ export class AiGatewayClient {
       percent: 12
     });
     const form = new FormData();
-    form.set('model', model);
+    form.set('model', String(model || this.providerSettings.imageEditModel || this.providerSettings.imageGenerationModel || providerDefaultModel(adapter.provider, 'imageEditModel', 'gpt-image-2')).trim());
     form.set('prompt', prompt);
     form.set('size', normalizedParameters.size);
     form.set('quality', normalizedParameters.quality);

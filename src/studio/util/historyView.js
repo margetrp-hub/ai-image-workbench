@@ -21,7 +21,11 @@ function historySessionKey(item) {
   const mode = item?.mode || item?.kind || 'image';
   const model = item?.model || item?.providerId || '';
   const caseId = item?.case?.id || item?.caseId || '';
-  return `legacy-session:${mode}:${model}:${caseId}:${bucket}`;
+  const promptBasis = String(item?.prompt || item?.generationPrompt || item?.case?.promptPreview || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 96);
+  return `legacy-session:${mode}:${model}:${caseId}:${bucket}:${promptBasis}`;
 }
 
 export function historyResultUrls(item) {

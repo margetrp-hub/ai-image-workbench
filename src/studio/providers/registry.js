@@ -97,22 +97,44 @@ const OPENAI_IMAGE_MODEL_SLOTS = freezeModelSlots([
 
 export const IMAGE_PROVIDER_REGISTRY = Object.freeze([
   Object.freeze({
-    id: 'openai-compatible',
-    label: 'OpenAI-compatible API',
+    id: 'official-openai',
+    label: 'Official OpenAI',
     authMode: PROVIDER_AUTH_MODES.MANUAL,
     adapterType: PROVIDER_ADAPTER_TYPES.OPENAI_COMPATIBLE_HTTP,
     routes: OPENAI_COMPATIBLE_ROUTES,
-    capabilities: OPENAI_IMAGE_CAPABILITIES,
+    capabilities: Object.freeze({
+      ...OPENAI_IMAGE_CAPABILITIES,
+      modelSync: true
+    }),
     parameters: OPENAI_IMAGE_PARAMETERS,
     descriptor: providerDescriptor({
       authFields: MANUAL_AUTH_FIELDS,
+      modelSync: true,
       modelSlots: OPENAI_IMAGE_MODEL_SLOTS,
-      notes: ['Direct or custom OpenAI-compatible image endpoint.']
+      notes: ['Official OpenAI API using /v1/images and /v1/models.']
+    })
+  }),
+  Object.freeze({
+    id: 'openai-compatible',
+    label: 'Custom OpenAI-compatible API',
+    authMode: PROVIDER_AUTH_MODES.MANUAL,
+    adapterType: PROVIDER_ADAPTER_TYPES.OPENAI_COMPATIBLE_HTTP,
+    routes: OPENAI_COMPATIBLE_ROUTES,
+    capabilities: Object.freeze({
+      ...OPENAI_IMAGE_CAPABILITIES,
+      modelSync: true
+    }),
+    parameters: OPENAI_IMAGE_PARAMETERS,
+    descriptor: providerDescriptor({
+      authFields: MANUAL_AUTH_FIELDS,
+      modelSync: true,
+      modelSlots: OPENAI_IMAGE_MODEL_SLOTS,
+      notes: ['Custom OpenAI-compatible endpoint with /v1/models support.']
     })
   }),
   Object.freeze({
     id: 'newapi-compatible',
-    label: 'NewAPI-compatible Gateway',
+    label: 'sub2api / NewAPI Gateway',
     authMode: PROVIDER_AUTH_MODES.MANUAL,
     adapterType: PROVIDER_ADAPTER_TYPES.OPENAI_COMPATIBLE_HTTP,
     routes: OPENAI_COMPATIBLE_ROUTES,

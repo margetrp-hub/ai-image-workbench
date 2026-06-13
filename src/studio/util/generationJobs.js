@@ -21,6 +21,44 @@ export function isFinalServerJobStatus(status) {
   return FINAL_SERVER_JOB_STATUSES.has(String(status || ''));
 }
 
+function compactFingerprintValue(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 12000);
+}
+
+export function generationTaskFingerprint(value = {}) {
+  const prompt = compactFingerprintValue(value.generationPrompt || value.prompt);
+  if (!prompt) return '';
+  const selectedNodeId = compactFingerprintValue(value.selectedCanvasNodeId || value.parentCanvasNodeId);
+  const referenceCount = Number(value.referenceCount ?? value.inputSummary?.referenceCount ?? value.referenceItems?.length ?? 0) || 0;
+  const hasMask = Boolean(value.hasMask ?? value.inputSummary?.hasMask ?? value.maskFile);
+  return [
+    compactFingerprintValue(value.sessionId),
+    compactFingerprintValue(value.mode || 'image'),
+    compactFingerprintValue(value.route || ''),
+    compactFingerprintValue(value.providerId || value.providerFamily || ''),
+    compactFingerprintValue(value.apiKeySource || ''),
+    compactFingerprintValue(value.model),
+    prompt,
+    compactFingerprintValue(value.size || value.customSize),
+    compactFingerprintValue(value.quality),
+    compactFingerprintValue(value.resolutionTier),
+    compactFingerprintValue(value.outputFormat),
+    compactFingerprintValue(value.moderation),
+    String(Number(value.count || value.n || 1) || 1),
+    selectedNodeId,
+    String(referenceCount),
+    hasMask ? 'mask' : ''
+  ].join('|');
+}
+
+export function findDuplicateActiveGenerationTask(queue, fingerprint) {
+  if (!fingerprint || !Array.isArray(queue)) return null;
+  return queue.find((item) => (
+    item?.fingerprint === fingerprint
+    && (item.status === 'queued' || item.status === 'running')
+  )) || null;
+}
+
 export function queueStatusFromServerJob(job) {
   const status = String(job?.status || job?.stage || '').trim();
   if (status === 'succeeded') return 'done';
@@ -158,6 +196,7 @@ export function upsertRemoteGenerationJobTask(queue, job, {
     requestIds,
     error: normalizeServerJobError(job),
     selectedCanvasNodeId: job.parentCanvasNodeId || '',
+    fingerprint: job.fingerprint || '',
     summary: inheritedPrompt || job.error?.message || `${fallbackSummary} ${job.id}`,
     restorable: false
   };

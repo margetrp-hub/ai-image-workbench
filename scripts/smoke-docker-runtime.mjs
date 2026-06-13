@@ -131,7 +131,7 @@ try {
 
   compose(['restart', 'studio-history'], { stdio: 'inherit' });
   await waitFor(`${baseUrl}/studio-api/health`, (response, text) => response.ok && text.includes('"ok":true'), 'Studio API health after history restart');
-  const restoredSession = await studioApi('/session');
+  const restoredSession = await studioApi('/session?sessionId=docker-runtime-session');
   assert(restoredSession.session?.sessionId === 'docker-runtime-session', 'Docker volume did not preserve session after history restart.', restoredSession);
   assert(restoredSession.session?.canvasNodes?.[0]?.persistedUrl, 'Docker history service did not persist session canvas image asset.', restoredSession.session);
   assert(restoredSession.session?.generationQueue?.[0]?.status === 'unknown', 'Docker history service did not preserve generation queue state.', restoredSession.session);

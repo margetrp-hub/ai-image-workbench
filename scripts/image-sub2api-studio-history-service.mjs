@@ -1313,6 +1313,7 @@ function buildJobRecord(body) {
     clientRequestId: cleanJobId(request.clientRequestId || body.clientRequestId),
     sessionId: text(request.sessionId || body.sessionId, 120),
     parentCanvasNodeId: text(request.parentCanvasNodeId || body.parentCanvasNodeId, 120),
+    fingerprint: text(request.fingerprint || body.fingerprint, 16000),
     status: 'queued',
     stage: 'queued',
     createdAt: now,
@@ -1824,6 +1825,15 @@ async function handler(req, res) {
       const runtime = buildJobRuntime(body);
       if (job.route === 'edits' && !runtime.images.length) {
         return sendJson(res, 400, { ok: false, error: 'REFERENCE_IMAGE_REQUIRED' });
+      }
+      if (job.fingerprint) {
+        const jobs = await readJobs(auth);
+        const existing = jobs.find((item) => (
+          item.fingerprint === job.fingerprint
+          && item.sessionId === job.sessionId
+          && JOB_ACTIVE_STATUSES.has(item.status)
+        ));
+        if (existing) return sendJson(res, 202, { ok: true, job: existing, duplicate: true });
       }
       await upsertJob(auth, job);
       enqueueGenerationJob(auth, job, runtime);
