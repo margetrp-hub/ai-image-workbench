@@ -28,6 +28,7 @@
     "ops:restore": "node scripts/ops-restore.mjs",
     "ops:self-check": "node scripts/ops-self-check.mjs",
     "ops:upgrade": "node scripts/ops-upgrade.mjs",
+    "ops:localize-inspirations": "node scripts/localize-inspiration-assets.mjs",
     "package:release": "node scripts/package-release.mjs && npm run check:release",
     "dev": "vite",
     "dev:studio": "vite --open /studio.html",
