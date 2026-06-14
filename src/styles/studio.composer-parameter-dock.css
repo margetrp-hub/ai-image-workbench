@@ -1,0 +1,384 @@
+﻿/* Collapsible bottom parameter dock. */
+.creationDesk.composerParamsCollapsed,
+.creationDesk.composerParamsCollapsed.paramRailCollapsed {
+  grid-template-rows: minmax(320px, 1fr) clamp(292px, 34vh, 388px) !important;
+}
+
+.creationDesk.composerOpen .bottomComposerBar.paramsCollapsed,
+.creationDesk.composerOpen .bottomComposerBar.paramsCollapsed.hasLineage,
+.creationDesk.composerOpen .bottomComposerBar.paramsCollapsed.hasThread,
+.creationDesk.composerOpen .bottomComposerBar.paramsCollapsed.hasThread.hasLineage {
+  grid-template-rows: 28px minmax(0, 1fr) 52px 34px !important;
+}
+
+.composerParamShelf {
+  position: relative;
+  padding-right: 36px !important;
+}
+
+.composerParamShelf.isCollapsed {
+  min-height: 34px !important;
+  height: 34px !important;
+  padding: 3px !important;
+  grid-template-rows: 1fr !important;
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--studio-surface-soft) 72%, transparent);
+}
+
+.composerParamSummary {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 9px;
+  display: grid;
+  grid-template-columns: auto auto minmax(90px, 0.25fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 76%, transparent);
+  color: var(--studio-text);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.composerParamSummary span,
+.composerParamSummary em,
+.composerParamSummary strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerParamSummary span {
+  color: var(--studio-primary);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.composerParamSummary em {
+  color: var(--studio-text-strong);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.composerParamSummary strong {
+  color: var(--studio-muted);
+  font-size: 10.5px;
+  font-weight: 850;
+}
+
+.composerParamFoldButton {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  z-index: 2;
+  width: 25px;
+  min-width: 25px;
+  height: 25px;
+  min-height: 25px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--studio-border) 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 86%, transparent);
+  color: var(--studio-muted);
+  cursor: pointer;
+  transition:
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.composerParamFoldButton:hover,
+.composerParamSummary:hover {
+  color: var(--studio-primary);
+  border-color: color-mix(in srgb, var(--studio-primary) 28%, var(--studio-border));
+}
+
+.composerParamSummary:hover {
+  transform: translateY(-1px);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--studio-primary) 12%, transparent);
+}
+
+.composerParamFoldButton:hover {
+  transform: translateY(-1px);
+}
+
+.composerParamShelf.isExpanded .composerParamFoldButton:hover {
+  transform: translateY(-50%) translateY(-1px);
+}
+
+.composerParamSummary:focus-visible,
+.composerParamFoldButton:focus-visible,
+.composerModeSegment button:focus-visible,
+.composerMiniSegment button:focus-visible,
+.composerParamField select:focus-visible,
+.composerCountField input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--studio-primary) 44%, transparent);
+  outline-offset: 2px;
+}
+
+.composerParamShelf.isExpanded {
+  padding: 5px 6px 5px 36px !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: 27px 27px !important;
+}
+
+.composerParamShelf.isExpanded .composerParamFoldButton {
+  position: absolute;
+  left: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+}
+
+.composerParamShelf.isExpanded .composerParamLane {
+  grid-column: 1;
+  padding-right: 1px;
+  mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 18px), transparent 100%);
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 6px;
+}
+
+.composerParamShelf.isExpanded .composerParamLane::after {
+  content: "";
+  flex: 0 0 12px;
+  align-self: stretch;
+  pointer-events: none;
+}
+
+.composerParamLane.primary .composerParamField.wide {
+  min-width: 174px;
+}
+
+.composerParamLane.primary .composerMiniSegment,
+.composerParamLane.secondary .composerMiniSegment {
+  min-width: max-content;
+}
+
+.composerCountField {
+  min-width: 112px;
+}
+
+.composerParamShelf.isExpanded .composerParamLane.primary {
+  grid-row: 1;
+}
+
+.composerParamShelf.isExpanded .composerParamLane.secondary {
+  grid-row: 2;
+}
+
+@media (max-width: 1080px) {
+  .creationDesk.composerParamsCollapsed,
+  .creationDesk.composerParamsCollapsed.paramRailCollapsed {
+    grid-template-rows: minmax(300px, 1fr) clamp(292px, 35vh, 384px) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .creationDesk.composerOpen .bottomComposerBar.paramsCollapsed {
+    grid-template-rows: 28px minmax(0, 1fr) 88px 36px !important;
+  }
+
+  .composerParamSummary {
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+  }
+
+  .composerParamSummary em {
+    display: none;
+  }
+}
+
+/* Image preview: keep the image inspectable and make the saved prompt readable. */
+.lightboxPanel {
+  width: min(1180px, calc(100vw - 32px)) !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr) !important;
+  grid-template-rows: minmax(0, 1fr) auto !important;
+}
+
+.lightboxImageStage {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #0f1713;
+}
+
+.lightboxImageStage img {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  object-fit: contain !important;
+  background: #0f1713;
+}
+
+.lightboxPromptPanel {
+  min-width: 0;
+  min-height: 0;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  border-left: 1px solid var(--studio-border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-primary) 5%, transparent), transparent 130px),
+    var(--studio-surface-strong);
+}
+
+.lightboxPromptHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.lightboxPromptHead div {
+  display: grid;
+  gap: 4px;
+}
+
+.lightboxPromptHead span {
+  color: var(--studio-muted);
+  font-size: 12px;
+}
+
+.lightboxPromptHead strong {
+  color: var(--studio-text-strong);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.lightboxPromptHead button {
+  min-height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  background: var(--studio-surface-soft);
+  color: var(--studio-text);
+  cursor: pointer;
+}
+
+.lightboxMetaChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lightboxMetaChips span {
+  min-height: 24px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--studio-border);
+  border-radius: 999px;
+  color: var(--studio-muted);
+  font-size: 11px;
+}
+
+.promptSectionList {
+  display: grid;
+  gap: 10px;
+}
+
+.promptSection {
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--studio-border) 86%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--studio-surface-soft) 82%, transparent);
+}
+
+.promptSection span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--studio-primary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.promptSection p,
+.promptEmptyText {
+  margin: 0;
+  color: var(--studio-text);
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.lightboxPanel figcaption {
+  grid-column: 1 / -1;
+}
+
+.historyPromptSection {
+  margin-top: 14px;
+  max-width: 880px;
+  display: grid;
+  gap: 10px;
+}
+
+.historyPromptItem {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--studio-border) 80%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--studio-surface) 92%, transparent);
+}
+
+.historyPromptItem > strong {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-primary) 14%, transparent);
+  color: var(--studio-primary);
+  font-size: 12px;
+}
+
+.historyPromptItem .promptSectionList {
+  min-width: 0;
+}
+
+.historyPromptItem .promptSection {
+  padding: 8px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--studio-border) 60%, transparent);
+}
+
+.historyPromptItem .promptSection:last-child {
+  border-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .lightboxPanel {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: minmax(0, 1fr) minmax(180px, 34vh) auto !important;
+  }
+
+  .lightboxPromptPanel {
+    border-left: 0;
+    border-top: 1px solid var(--studio-border);
+  }
+}
+

@@ -1,0 +1,742 @@
+﻿/* Conversation-first composer: expanded state becomes a real bottom workspace. */
+.creationDesk.composerOpen {
+  grid-template-rows: minmax(360px, 1fr) clamp(238px, 31vh, 328px);
+}
+
+.creationDesk.composerOpen .workPreview.infiniteCanvas {
+  bottom: 0;
+}
+
+.creationDesk .bottomComposerBar {
+  grid-column: 1;
+  grid-row: 2;
+  width: auto;
+  min-width: 0;
+  margin: 0 0 0 12px;
+  border-radius: 14px;
+}
+
+.creationDesk.composerOpen .bottomComposerBar {
+  height: 100%;
+  min-height: 238px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 38px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-self: stretch;
+  align-items: stretch;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-strong) 94%, transparent), color-mix(in srgb, var(--studio-surface) 92%, transparent));
+  box-shadow:
+    0 -18px 54px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 color-mix(in srgb, #fff 34%, transparent);
+  overflow: hidden;
+}
+
+.composerPanelHead {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.composerPanelTitle {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.composerPanelTitle strong {
+  overflow: hidden;
+  color: var(--studio-text-strong);
+  font-size: 13px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerPanelTitle span {
+  min-height: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: var(--studio-muted);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.composerNewRootAction {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--studio-border);
+  border-radius: 999px;
+  background: var(--studio-surface-soft);
+  color: var(--studio-primary);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.creationDesk.composerOpen .composerThread {
+  max-width: none;
+  max-height: none;
+  min-height: 0;
+  min-width: 0;
+  padding: 10px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--studio-border) 78%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--studio-surface-soft) 62%, transparent);
+}
+
+.composerEmptyThread {
+  min-height: 100%;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  color: var(--studio-muted);
+  text-align: center;
+}
+
+.composerEmptyThread strong {
+  color: var(--studio-text-strong);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.creationDesk.composerOpen .composerMessage {
+  width: min(760px, 100%);
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--studio-border) 82%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 82%, transparent);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+}
+
+.creationDesk.composerOpen .composerMessage.user {
+  justify-self: end;
+  background: color-mix(in srgb, var(--studio-primary) 10%, var(--studio-surface-strong));
+}
+
+.creationDesk.composerOpen .composerMessage p {
+  max-height: none;
+  color: var(--studio-text);
+}
+
+.composerPromptRow {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.creationDesk.composerOpen .bottomComposerInput textarea {
+  min-height: 74px;
+  height: 74px;
+  max-height: 120px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  resize: vertical;
+}
+
+.composerActionGroup {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.composerAssistantAction,
+.composerGenerateAction {
+  min-height: 42px;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.composerAssistantAction {
+  border: 1px solid color-mix(in srgb, var(--studio-primary) 25%, var(--studio-border));
+  background: color-mix(in srgb, var(--studio-primary) 9%, var(--studio-surface-soft));
+  color: var(--studio-primary);
+}
+
+.composerGenerateAction {
+  border: 1px solid color-mix(in srgb, var(--studio-primary) 42%, transparent);
+  background: linear-gradient(135deg, var(--studio-primary), var(--studio-accent)) !important;
+  color: #fff !important;
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--studio-primary) 22%, transparent);
+}
+
+.primaryAction.isStopAction,
+.paramGenerateAction.isStopAction,
+.paramDrawerGenerate.isStopAction {
+  border-color: color-mix(in srgb, #b22732 44%, var(--studio-border)) !important;
+  background: linear-gradient(135deg, #b22732, #e06c58) !important;
+  color: #fff !important;
+  box-shadow: 0 14px 30px color-mix(in srgb, #b22732 22%, transparent);
+}
+
+.primaryAction.isRetryAction,
+.composerGenerateAction.isRetryAction,
+.paramGenerateAction.isRetryAction,
+.paramDrawerGenerate.isRetryAction {
+  border-color: color-mix(in srgb, #b7791f 44%, var(--studio-border)) !important;
+  background: linear-gradient(135deg, #b7791f, #d98d28) !important;
+  color: #fff !important;
+  box-shadow: 0 14px 30px color-mix(in srgb, #b7791f 18%, transparent);
+}
+
+.composerAssistantAction:disabled,
+.composerGenerateAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.creationDesk:not(.composerOpen) {
+  grid-template-rows: minmax(460px, 1fr) 54px;
+}
+
+.creationDesk:not(.composerOpen) .bottomComposerBar {
+  height: 48px;
+  min-height: 48px;
+  padding: 6px 8px;
+  display: grid !important;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.creationDesk:not(.composerOpen) .composerPanelHead {
+  display: grid;
+  place-items: center;
+}
+
+.creationDesk:not(.composerOpen) .composerPanelTitle,
+.creationDesk:not(.composerOpen) .composerNewRootAction,
+.creationDesk:not(.composerOpen) .composerInspirationDock,
+.creationDesk:not(.composerOpen) .composerThread {
+  display: none !important;
+}
+
+.creationDesk:not(.composerOpen) .composerPromptRow {
+  display: contents;
+}
+
+.creationDesk:not(.composerOpen) .bottomComposerInput textarea {
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px;
+  padding: 7px 12px;
+  resize: none;
+  overflow: hidden;
+  border-radius: 999px;
+}
+
+.creationDesk:not(.composerOpen) .composerActionGroup {
+  display: grid;
+}
+
+.creationDesk:not(.composerOpen) .composerAssistantAction {
+  display: none;
+}
+
+.creationDesk:not(.composerOpen) .composerGenerateAction {
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 0 !important;
+  font-size: 0;
+}
+
+.creationDesk:not(.composerOpen) .composerGenerateAction span {
+  display: none;
+}
+
+.creationDesk.paramRailCollapsed {
+  grid-template-columns: minmax(0, 1fr) 52px;
+}
+
+.creationDesk.paramRailCollapsed .canvasToolbar {
+  right: 70px;
+}
+
+.creationDesk.paramRailCollapsed .paramRail {
+  width: 44px;
+  min-height: 74px;
+  margin-right: 8px;
+  padding: 5px;
+  border-radius: 999px;
+}
+
+.creationDesk.paramRailCollapsed .paramRailHead {
+  width: 34px;
+  min-width: 34px;
+  min-height: 64px !important;
+  height: 64px;
+  padding: 0;
+  display: grid !important;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--studio-primary);
+  color: #fff !important;
+  font-size: 0 !important;
+  writing-mode: horizontal-tb;
+  box-shadow:
+    0 12px 26px color-mix(in srgb, var(--studio-primary) 28%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.creationDesk.paramRailCollapsed .paramRailHead svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.4;
+}
+
+.creationDesk.paramRailCollapsed .paramRailHead span {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .creationDesk.composerOpen {
+    grid-template-rows: minmax(300px, 1fr) minmax(260px, 38vh);
+  }
+
+  .composerPromptRow {
+    grid-template-columns: 1fr;
+  }
+
+  .composerActionGroup {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Composer polish pass: make the bottom workspace feel like a real session pane. */
+.creationDesk.composerOpen .bottomComposerBar {
+  grid-template-rows: 38px minmax(0, 1fr) 76px;
+  gap: 9px;
+  border-color: color-mix(in srgb, var(--studio-border-strong) 24%, var(--studio-border));
+  animation: studioComposerExpand 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.creationDesk.composerOpen .composerPanelHead {
+  min-height: 38px;
+  padding: 0 2px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--studio-border) 72%, transparent);
+}
+
+.creationDesk.composerOpen .composerPanelTitle {
+  flex: 1 1 auto;
+}
+
+.creationDesk.composerOpen .composerPanelTitle strong {
+  font-size: 14px;
+}
+
+.creationDesk.composerOpen .composerPanelTitle span {
+  font-size: 11px;
+}
+
+.creationDesk.composerOpen .composerInspirationDock {
+  margin-left: auto;
+}
+
+.creationDesk.composerOpen .bottomComposerToggle {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  align-self: center;
+  border-radius: 999px;
+  background: var(--studio-surface-soft);
+}
+
+.creationDesk.composerOpen .composerThread {
+  align-self: stretch;
+  height: 100%;
+  max-height: none;
+  padding: 12px;
+  gap: 9px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-soft) 70%, transparent), color-mix(in srgb, var(--studio-surface-soft) 44%, transparent));
+}
+
+.composerEmptyThread {
+  min-height: 100%;
+  opacity: 0.86;
+}
+
+.creationDesk.composerOpen .composerMessage {
+  animation: studioMessageIn 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.creationDesk.composerOpen .composerPromptRow {
+  align-items: stretch;
+}
+
+.creationDesk.composerOpen .bottomComposerInput textarea {
+  height: 76px;
+  min-height: 66px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 26%, transparent);
+}
+
+.creationDesk.composerOpen .composerActionGroup {
+  align-self: stretch;
+  grid-template-columns: 80px 80px;
+  align-content: end;
+}
+
+.creationDesk.composerOpen .composerAssistantAction,
+.creationDesk.composerOpen .composerGenerateAction {
+  width: 80px;
+  min-width: 80px;
+  height: 38px;
+  padding: 0 10px;
+  transition:
+    transform 170ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 170ms ease,
+    filter 170ms ease,
+    background 170ms ease,
+    border-color 170ms ease;
+}
+
+.creationDesk.composerOpen .composerAssistantAction:hover:not(:disabled),
+.creationDesk.composerOpen .composerGenerateAction:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.creationDesk.composerOpen .composerAssistantAction:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--studio-primary) 38%, var(--studio-border));
+  background: color-mix(in srgb, var(--studio-primary) 14%, var(--studio-surface-soft));
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--studio-primary) 12%, transparent);
+}
+
+.creationDesk.composerOpen .composerGenerateAction:hover:not(:disabled) {
+  filter: saturate(1.08) brightness(1.04);
+  box-shadow: 0 18px 36px color-mix(in srgb, var(--studio-primary) 28%, transparent);
+}
+
+.creationDesk:not(.composerOpen) .bottomComposerBar {
+  border-radius: 999px;
+  box-shadow:
+    0 12px 32px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 color-mix(in srgb, #fff 32%, transparent);
+}
+
+.creationDesk:not(.composerOpen) .composerPanelHead {
+  width: 34px;
+}
+
+.creationDesk:not(.composerOpen) .bottomComposerToggle {
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  border-radius: 999px;
+}
+
+.creationDesk:not(.composerOpen) .composerGenerateAction {
+  border-radius: 999px;
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--studio-primary) 20%, transparent);
+}
+
+.creationDesk.paramRailCollapsed .paramRail {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-strong) 94%, transparent), color-mix(in srgb, var(--studio-surface-soft) 88%, transparent));
+}
+
+.creationDesk.paramRailCollapsed .paramRailHead {
+  transition:
+    transform 170ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 170ms ease,
+    filter 170ms ease;
+}
+
+.creationDesk.paramRailCollapsed .paramRailHead:hover {
+  filter: saturate(1.08) brightness(1.04);
+  transform: translateY(-1px);
+  box-shadow:
+    0 16px 34px color-mix(in srgb, var(--studio-primary) 32%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.48);
+}
+
+@keyframes studioComposerExpand {
+  from {
+    opacity: 0.72;
+    transform: translateY(14px) scale(0.988);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes studioMessageIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Final layout lock: keep the session composer anchored while messages update. */
+.creationDesk.composerOpen {
+  grid-template-rows: minmax(360px, 1fr) clamp(238px, 31vh, 328px);
+}
+
+.creationDesk.composerOpen .bottomComposerBar {
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 238px;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 38px minmax(0, 1fr) 76px;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.creationDesk.composerOpen .composerPanelHead {
+  grid-row: 1;
+}
+
+.creationDesk.composerOpen .composerThread {
+  grid-row: 2;
+  min-height: 0;
+  overflow: auto;
+}
+
+.creationDesk.composerOpen .composerPromptRow {
+  grid-row: 3;
+  min-height: 76px;
+  align-self: end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 168px;
+  align-items: stretch;
+}
+
+.creationDesk.composerOpen .bottomComposerInput,
+.creationDesk.composerOpen .bottomComposerInput textarea {
+  height: 100%;
+}
+
+.creationDesk.composerOpen .bottomComposerInput textarea {
+  min-height: 66px;
+  max-height: 76px;
+  resize: none;
+}
+
+.creationDesk.composerOpen .composerActionGroup {
+  height: 100%;
+  align-self: stretch;
+  align-content: end;
+  grid-template-columns: 80px 80px;
+}
+
+/* Canvas-first lock: legacy workbench blocks must not push the canvas composer. */
+.creationDesk .deskPanel {
+  position: absolute !important;
+  inset: 14px auto auto 14px !important;
+  z-index: 7;
+  width: min(360px, calc(100% - 120px));
+  max-width: min(360px, calc(100% - 120px));
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  pointer-events: none;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.creationDesk .deskPanel > :not(.referenceBox):not(.referenceCollapsedBlock):not(.maskReferenceBox):not(.promptSuggestion):not(.generationProgress):not(.statusLine) {
+  display: none !important;
+}
+
+.creationDesk .referenceBox,
+.creationDesk .referenceCollapsedBlock,
+.creationDesk .promptSuggestion,
+.creationDesk .generationProgress,
+.creationDesk .statusLine {
+  pointer-events: auto;
+}
+
+.creationDesk .referenceBox {
+  width: min(360px, calc(100vw - 240px));
+}
+
+.creationDesk .resultStage {
+  display: none !important;
+}
+
+.creationDesk .bottomComposerBar {
+  position: relative;
+  z-index: 5;
+}
+
+/* Final rail lock: the project cards need room, later canvas rules must not shrink them. */
+.studioLayout,
+.studioLayout.railCollapsed {
+  grid-template-columns: 168px minmax(0, 1fr);
+}
+
+.studioLayout.railCollapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.templateRail:not(.collapsed) {
+  width: 168px;
+  min-width: 168px;
+}
+
+/* Expanded composer hard lock: lineage/thread states must not revive legacy multi-column rows. */
+.creationDesk.composerOpen .bottomComposerBar,
+.creationDesk.composerOpen .bottomComposerBar.hasLineage,
+.creationDesk.composerOpen .bottomComposerBar.hasThread,
+.creationDesk.composerOpen .bottomComposerBar.hasThread.hasLineage {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: 38px minmax(0, 1fr) 76px !important;
+}
+
+.creationDesk.composerOpen .composerPanelHead,
+.creationDesk.composerOpen .composerThread,
+.creationDesk.composerOpen .composerPromptRow {
+  grid-column: 1 / -1 !important;
+  width: 100%;
+  min-width: 0;
+  justify-self: stretch;
+}
+
+.creationDesk.composerOpen .composerThread {
+  max-width: none !important;
+  padding: 12px 14px !important;
+  display: flex !important;
+  flex-direction: column;
+  gap: 10px;
+  border-color: color-mix(in srgb, var(--studio-border) 58%, transparent) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-soft) 62%, transparent), color-mix(in srgb, var(--studio-surface-strong) 72%, transparent)) !important;
+}
+
+.creationDesk.composerOpen .composerPromptRow {
+  grid-template-columns: minmax(0, 1fr) 132px !important;
+}
+
+.creationDesk.composerOpen .bottomComposerInput {
+  grid-column: 1;
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.creationDesk.composerOpen .bottomComposerInput textarea {
+  display: block;
+  width: 100%;
+}
+
+.creationDesk.composerOpen .composerActionGroup {
+  grid-column: 2;
+  width: 132px;
+  grid-template-columns: 38px 86px !important;
+  gap: 8px;
+}
+
+.creationDesk.composerOpen .composerAssistantAction {
+  width: 38px !important;
+  min-width: 38px !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+}
+
+.creationDesk.composerOpen .composerAssistantAction span {
+  display: none !important;
+}
+
+.creationDesk.composerOpen .composerGenerateAction {
+  width: 86px !important;
+  min-width: 86px !important;
+}
+
+.creationDesk.composerOpen .composerMessage {
+  width: fit-content !important;
+  max-width: min(78%, 720px);
+  padding: 9px 11px !important;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  align-self: flex-start;
+  border-radius: 14px !important;
+  border-color: color-mix(in srgb, var(--studio-border) 62%, transparent) !important;
+  background: color-mix(in srgb, var(--studio-surface-strong) 88%, transparent) !important;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.07) !important;
+  animation: studioMessageIn 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.creationDesk.composerOpen .composerMessage.user {
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-self: flex-end;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--studio-primary) 18%, var(--studio-surface-strong)), color-mix(in srgb, var(--studio-primary) 8%, var(--studio-surface-strong))) !important;
+}
+
+.creationDesk.composerOpen .composerMessage.user span {
+  grid-column: 2;
+  grid-row: 1;
+  background: color-mix(in srgb, var(--studio-primary) 22%, var(--studio-surface-soft));
+  color: var(--studio-primary);
+}
+
+.creationDesk.composerOpen .composerMessage.user p {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.creationDesk.composerOpen .composerMessage span {
+  width: 24px;
+  min-height: 24px;
+  font-size: 10px;
+}
+
+.creationDesk.composerOpen .composerMessage p {
+  max-height: none !important;
+  margin: 0;
+  color: var(--studio-text);
+  font-size: 12px;
+  line-height: 1.58;
+  white-space: pre-wrap;
+}
+
+.creationDesk.composerOpen .composerMessage button {
+  grid-column: 2;
+  min-height: 24px;
+  margin-top: 2px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 10px;
+}
+
+.creationDesk.composerOpen .composerMessage.user button {
+  grid-column: 1;
+  justify-self: end;
+}
+
+.creationDesk.composerOpen .composerEmptyThread {
+  width: 100%;
+  min-height: 100%;
+  border: 1px dashed color-mix(in srgb, var(--studio-border) 72%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--studio-surface-soft) 40%, transparent);
+}
+

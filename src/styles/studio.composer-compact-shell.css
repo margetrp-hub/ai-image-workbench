@@ -1,0 +1,459 @@
+﻿/* Final composer alignment: collapse button, input, and send button share one baseline. */
+.creationDesk:not(.composerOpen) .bottomComposerBar {
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  min-height: 46px;
+  height: 46px;
+  padding: 5px 7px 5px 10px;
+}
+
+.creationDesk:not(.composerOpen) .bottomComposerToggle,
+.creationDesk:not(.composerOpen) .bottomComposerInput textarea,
+.creationDesk:not(.composerOpen) .composerPrimaryAction {
+  height: 36px !important;
+  min-height: 36px !important;
+}
+
+.creationDesk:not(.composerOpen) .bottomComposerToggle {
+  width: 36px !important;
+  min-width: 36px !important;
+}
+
+.creationDesk:not(.composerOpen) .bottomComposerInput,
+.creationDesk:not(.composerOpen) .bottomComposerInput textarea,
+.creationDesk:not(.composerOpen) .composerPrimaryAction {
+  align-self: center;
+}
+
+.creationDesk:not(.composerOpen) .composerPrimaryAction {
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  border-radius: 999px;
+}
+
+/* Icon-only assistant submit: keep the composer row visually locked to one baseline. */
+.creationDesk .bottomComposerBar {
+  grid-template-columns: 40px minmax(0, 1fr) 64px 40px;
+  align-items: center;
+  gap: 9px;
+}
+
+.creationDesk .bottomComposerBar.hasLineage {
+  grid-template-columns: 40px minmax(0, 1fr) minmax(90px, 126px) 64px 40px;
+}
+
+.creationDesk .bottomComposerBar.hasThread {
+  grid-template-columns: 40px minmax(0, 1fr) minmax(132px, 188px) 64px 40px;
+}
+
+.creationDesk .bottomComposerBar.hasThread.hasLineage {
+  grid-template-columns: 40px minmax(0, 1fr) minmax(116px, 170px) minmax(90px, 126px) 64px 40px;
+}
+
+.creationDesk .bottomComposerToggle,
+.creationDesk .bottomComposerInput,
+.creationDesk .composerThread,
+.creationDesk .composerAssistGroup,
+.creationDesk .composerInspirationDock,
+.creationDesk .composerPrimaryAction {
+  align-self: center;
+}
+
+.creationDesk .composerThread {
+  min-width: 0;
+  max-width: 188px;
+}
+
+.creationDesk .composerAssistGroup {
+  min-width: 0;
+  width: min(126px, 100%);
+  justify-items: stretch;
+}
+
+.creationDesk .composerLineageHint {
+  max-width: none;
+  justify-content: space-between;
+}
+
+.creationDesk .composerPrimaryAction {
+  width: 40px !important;
+  min-width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  display: grid !important;
+  place-items: center;
+  flex: 0 0 40px;
+  line-height: 1;
+  font-size: 0;
+}
+
+.creationDesk .composerPrimaryAction svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  transform: none;
+  stroke-width: 2.35;
+}
+
+.creationDesk .composerPrimaryAction:hover:not(:disabled) svg {
+  transform: scale(1.04);
+}
+
+.creationDesk:not(.composerOpen) .bottomComposerBar {
+  grid-template-columns: 36px minmax(0, 1fr) 38px;
+}
+
+.creationDesk:not(.composerOpen) .composerInspirationDock {
+  display: none;
+}
+
+.creationDesk:not(.composerOpen) .composerPrimaryAction {
+  width: 38px !important;
+  min-width: 38px !important;
+  flex-basis: 38px;
+  padding: 0 !important;
+}
+
+.creationDesk:not(.composerOpen) .composerPrimaryAction svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* Keep library drawers above the canvas instead of clipping them inside the rail. */
+.templateRail {
+  z-index: 40;
+  overflow: visible;
+}
+
+.sideLibraryDrawer {
+  z-index: 70;
+  height: min(404px, calc(100vh - 92px));
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  border-color: color-mix(in srgb, var(--studio-border-strong) 28%, var(--studio-border));
+  box-shadow: 0 26px 72px rgba(15, 23, 42, 0.18);
+}
+
+.sideLibraryFilters {
+  align-items: center;
+  flex: 0 0 auto;
+  align-self: start;
+}
+
+.sideLibraryDrawerList {
+  flex: 0 0 auto;
+  min-height: 174px;
+  max-height: 188px;
+  grid-auto-columns: minmax(184px, 208px);
+  align-items: start;
+}
+
+.sideLibraryLicense {
+  margin-top: auto;
+}
+
+.sideLibraryDrawerList .categoryTile,
+.sideLibraryDrawerList .caseTile,
+.sideLibraryDrawerList .videoInspirationTile {
+  min-height: 168px;
+  height: 168px !important;
+  align-self: start;
+}
+
+.sideLibraryDrawerList .categoryTile {
+  grid-template-columns: 1fr;
+  grid-template-rows: 76px auto auto auto;
+  gap: 7px;
+  padding: 10px;
+}
+
+.sideLibraryDrawerList .categoryThumbs,
+.sideLibraryDrawerList .categoryThumbs img {
+  width: 100%;
+  height: 76px;
+  min-height: 76px;
+}
+
+.sideLibraryDrawerList .categoryTile strong,
+.sideLibraryDrawerList .caseTile strong,
+.sideLibraryDrawerList .videoInspirationTile strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.sideLibraryDrawerList .categoryTile span,
+.sideLibraryDrawerList .categoryTile small,
+.sideLibraryDrawerList .caseTile em,
+.sideLibraryDrawerList .caseTile small,
+.sideLibraryDrawerList .videoInspirationTile span,
+.sideLibraryDrawerList .videoInspirationTile p {
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.sideLibraryDrawerList .caseTileMain {
+  grid-template-rows: 82px auto auto;
+  min-height: 0;
+  height: 100%;
+  gap: 7px;
+  padding: 9px;
+}
+
+.sideLibraryDrawerList .caseTile img,
+.sideLibraryDrawerList .caseMedia {
+  height: 82px;
+}
+
+.creationDesk {
+  z-index: 0;
+}
+
+/* Right parameter rail can fully collapse so the canvas regains the edge space. */
+.creationDesk.paramRailCollapsed {
+  grid-template-columns: minmax(0, 1fr) 54px;
+  transition: grid-template-columns 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.creationDesk.paramRailCollapsed .workPreview.infiniteCanvas {
+  right: 2px;
+  transition: right 260ms cubic-bezier(0.22, 1, 0.36, 1), transform 120ms ease-out;
+}
+
+.creationDesk.paramRailCollapsed .canvasToolbar {
+  right: 72px;
+  transition: right 260ms cubic-bezier(0.22, 1, 0.36, 1), transform 180ms ease, box-shadow 180ms ease;
+}
+
+.creationDesk.paramRailCollapsed .paramRail {
+  position: relative;
+  width: 46px;
+  min-height: 118px;
+  margin-top: 48px;
+  margin-right: 8px;
+  padding: 7px 4px;
+  gap: 0;
+  border-color: color-mix(in srgb, var(--studio-primary) 34%, var(--studio-border));
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-surface-strong) 96%, transparent), color-mix(in srgb, var(--studio-surface-soft) 88%, transparent));
+  box-shadow:
+    0 18px 42px rgba(15, 23, 42, 0.18),
+    0 0 0 5px color-mix(in srgb, var(--studio-primary) 7%, transparent);
+  transition:
+    width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    min-height 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    margin 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 220ms ease,
+    background 220ms ease;
+}
+
+.creationDesk.paramRailCollapsed .paramRail::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  z-index: -1;
+  border-radius: 28px;
+  background: radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--studio-primary) 22%, transparent), transparent 64%);
+  opacity: 0.82;
+  pointer-events: none;
+}
+
+.creationDesk.paramRailCollapsed .paramRail button:not(.paramRailHead),
+.creationDesk.paramRailCollapsed .paramDrawer {
+  display: none;
+}
+
+.creationDesk.paramRailCollapsed .paramRailHead {
+  width: 38px;
+  min-width: 38px;
+  min-height: 104px !important;
+  height: 104px;
+  padding: 8px 0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 18px;
+  background: transparent;
+  color: var(--studio-text-strong) !important;
+  font-size: 12px !important;
+  font-weight: 950;
+  line-height: 1;
+  letter-spacing: 0;
+  box-shadow: none;
+  text-orientation: upright;
+  writing-mode: vertical-rl;
+}
+
+.creationDesk.paramRailCollapsed .paramRailHead span {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--studio-primary);
+  color: #fff;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--studio-primary) 30%, transparent);
+  font-size: 16px;
+  line-height: 1;
+  writing-mode: horizontal-tb;
+}
+
+.creationDesk.paramRailCollapsed .paramRail:hover {
+  transform: translateX(-2px);
+  box-shadow:
+    0 22px 52px rgba(15, 23, 42, 0.22),
+    0 0 0 6px color-mix(in srgb, var(--studio-primary) 11%, transparent);
+}
+
+/* Motion polish: one soft movement language for the studio shell. */
+.studioLayout,
+.templateRail,
+.creationDesk,
+.paramRail,
+.paramDrawer,
+.canvasToolbar,
+.referenceBox,
+.referenceCollapsedBlock,
+.bottomComposerToggle,
+.creationDesk .bottomComposerBar,
+.composerInspirationPanel,
+.composerThread,
+.graphNode,
+.canvasNodeToolbar,
+.canvasInlineEditor,
+.sideProjectItem,
+.sideProjectOpen,
+.railAccountCard {
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.templateRail {
+  transition:
+    width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.templateRail.collapsed {
+  box-shadow:
+    0 16px 36px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 color-mix(in srgb, #fff 42%, transparent);
+}
+
+.templateRail.collapsed .railIconAction,
+.templateRail.collapsed .railAvatarButton {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.templateRail.collapsed .railIconAction:hover,
+.templateRail.collapsed .railAvatarButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+}
+
+.creationDesk .bottomComposerBar {
+  transition:
+    grid-template-columns 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    min-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms ease,
+    background 180ms ease;
+}
+
+.creationDesk.composerOpen .bottomComposerBar {
+  animation: studioSoftRise 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.composerInspirationPanel,
+.paramDrawer,
+.canvasInlineEditor {
+  animation: studioPopoverIn 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: 85% 100%;
+}
+
+.paramDrawer {
+  transform-origin: 100% 24px;
+}
+
+.graphNode:hover,
+.sideProjectOpen:hover {
+  transform: translateY(-2px);
+}
+
+.graphNode,
+.sideProjectOpen,
+.composerInspirationToggle,
+.paramRail button,
+.paramDrawerGenerate,
+.bottomComposerToggle,
+.referenceCollapsedBlock {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease;
+}
+
+@keyframes studioSoftRise {
+  from {
+    opacity: 0.72;
+    transform: translateY(8px) scale(0.992);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes studioPopoverIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studioLayout,
+  .templateRail,
+  .creationDesk,
+  .paramRail,
+  .paramDrawer,
+  .canvasToolbar,
+  .referenceBox,
+  .referenceCollapsedBlock,
+  .bottomComposerToggle,
+  .creationDesk .bottomComposerBar,
+  .composerInspirationPanel,
+  .composerThread,
+  .graphNode,
+  .canvasNodeToolbar,
+  .canvasInlineEditor,
+  .sideProjectItem,
+  .sideProjectOpen,
+  .railAccountCard,
+  .templateRail.collapsed .railIconAction,
+  .templateRail.collapsed .railAvatarButton {
+    animation: none !important;
+    transition-duration: 1ms !important;
+  }
+}
+
