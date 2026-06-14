@@ -10,10 +10,10 @@ import {
 } from '../util/resultFiles.js';
 import { displayResultUrl } from '../util/assets.js';
 
-export function Lightbox({ url, fallbackSrc = '', index, outputFormat = 'png', downloadMeta, onClose, t = (key, fallback) => fallback || key }) {
-  if (!url) return null;
+export function Lightbox({ url, fallbackSrc = '', promptOnly = false, index, outputFormat = 'png', downloadMeta, onClose, t = (key, fallback) => fallback || key }) {
+  if (!url && !promptOnly) return null;
   const isReferencePreview = downloadMeta?.mode === 'reference' || downloadMeta?.mode === 'library-reference';
-  const extension = resultExtension(url, outputFormat);
+  const extension = resultExtension(url || 'prompt.txt', outputFormat);
   const downloadName = buildStudioDownloadFilename({
     ...(downloadMeta || {}),
     mode: 'image',
@@ -21,7 +21,7 @@ export function Lightbox({ url, fallbackSrc = '', index, outputFormat = 'png', d
     extension
   });
   const promptText = downloadMeta?.prompt || downloadMeta?.generationPrompt || '';
-  const displayUrl = displayResultUrl(url);
+  const displayUrl = url ? displayResultUrl(url) : '';
   const meta = [
     downloadMeta?.providerId,
     downloadMeta?.size,
@@ -39,13 +39,21 @@ export function Lightbox({ url, fallbackSrc = '', index, outputFormat = 'png', d
           <X size={18} />
         </button>
         <div className="lightboxImageStage">
-          <ProtectedStudioImage
-            src={url}
-            fallbackSrc={fallbackSrc}
-            alt={`${isReferencePreview ? t('references.title', '参考图') : t('lightbox.imageAlt', '生成结果')} ${index + 1}`}
-            fallback={<ImageIcon size={24} />}
-            rootMargin="0px"
-          />
+          {promptOnly ? (
+            <div className="lightboxPromptOnlyStage">
+              <ImageIcon size={26} />
+              <strong>{t('gallery.promptZone', '提示词专区')}</strong>
+              <p>{t('gallery.promptOnlyHint', '这条灵感暂时没有可用图片，但提示词仍可预览和选用。')}</p>
+            </div>
+          ) : (
+            <ProtectedStudioImage
+              src={url}
+              fallbackSrc={fallbackSrc}
+              alt={`${isReferencePreview ? t('references.title', '参考图') : t('lightbox.imageAlt', '生成结果')} ${index + 1}`}
+              fallback={<ImageIcon size={24} />}
+              rootMargin="0px"
+            />
+          )}
         </div>
         <aside className="lightboxPromptPanel">
           <div className="lightboxPromptHead">
@@ -69,10 +77,12 @@ export function Lightbox({ url, fallbackSrc = '', index, outputFormat = 'png', d
         </aside>
         <figcaption>
           <span>{isReferencePreview ? referenceLabel : `#${index + 1}`}</span>
-          <a href={displayUrl} download={downloadName}>
-            <Download size={16} />
-            下载
-          </a>
+          {displayUrl ? (
+            <a href={displayUrl} download={downloadName}>
+              <Download size={16} />
+              下载
+            </a>
+          ) : null}
         </figcaption>
       </figure>
     </div>

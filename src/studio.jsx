@@ -1380,6 +1380,10 @@ function templatePreviewImage(item) {
   return imageFallback(item) || templateThumbnail(item);
 }
 
+function hasLibraryPreviewImage(item) {
+  return Boolean(item && !item.imageUnavailable && (templateThumbnail(item) || imageFallback(item)));
+}
+
 function templateReferenceThumb(item) {
   return templateThumbnail(item) || templatePreviewImage(item);
 }
@@ -1401,7 +1405,7 @@ function handleImageFallback(event, fallback) {
 }
 
 function libraryFallbackImage(item) {
-  return templateThumbnail(item) || imageFallback(item);
+  return hasLibraryPreviewImage(item) ? templateThumbnail(item) || imageFallback(item) : '';
 }
 
 function buildCategoryGroups(cases) {
@@ -1726,7 +1730,7 @@ function CategoryCard({ group, selected, onSelect }) {
 function CaseCard({ item, selected, onSelect, onPreview, favorite, onToggleFavorite, onAppend, t = (key, fallback) => fallback || key }) {
   const image = templateThumbnail(item);
   const fallback = imageFallback(item);
-  const hasPreviewImage = Boolean(image || fallback);
+  const hasPreviewImage = hasLibraryPreviewImage(item);
   const meta = caseCardMeta(item);
   const risks = Array.isArray(item.riskTags) ? item.riskTags.slice(0, 3) : [];
   return (
@@ -1767,6 +1771,49 @@ function CaseCard({ item, selected, onSelect, onPreview, favorite, onToggleFavor
         {risks.length ? (
           <small>{risks.map(riskLabel).join(' / ')}</small>
         ) : null}
+      </button>
+      <div className="caseTileActions">
+        {onAppend ? (
+          <button
+            type="button"
+            className="appendMiniButton"
+            onClick={(event) => {
+              event.stopPropagation();
+              onAppend(item);
+            }}
+            aria-label={t('gallery.useTemplate', '选用这个模板')}
+            title={t('gallery.useTemplateHint', '选用后带入底部对话框')}
+          >
+            <Check size={13} />
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className={`favoriteMiniButton ${favorite ? 'active' : ''}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleFavorite(item);
+          }}
+          aria-label={favorite ? t('gallery.unfavoriteTemplate', '取消收藏模板') : t('gallery.favoriteTemplate', '收藏模板')}
+          title={favorite ? t('gallery.unfavorite', '取消收藏') : t('gallery.favoriteTemplate', '收藏模板')}
+        >
+          <Star size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PromptCaseCard({ item, selected, onSelect, favorite, onToggleFavorite, onAppend, t = (key, fallback) => fallback || key }) {
+  const meta = caseCardMeta(item);
+  const promptPreview = item.promptPreview || item.summary || item.prompt || '';
+  return (
+    <div className={`caseTile promptOnly ${selected ? 'selected' : ''}`}>
+      <button className="caseTileMain promptCaseMain" type="button" onClick={() => onSelect(item)}>
+        <span>{typeof item.id === 'number' ? `#${item.id}` : t('gallery.promptOnly', '提示词')}</span>
+        <strong>{item.title}</strong>
+        <p className="casePromptExcerpt">{compact(promptPreview, 180) || t('gallery.promptOnlyHint', '这条灵感暂时没有可用图片，但提示词仍可预览和选用。')}</p>
+        {meta ? <em>{meta}</em> : null}
       </button>
       <div className="caseTileActions">
         {onAppend ? (
@@ -1908,7 +1955,11 @@ function GalleryWorkspacePanel({
   const isHistory = type === 'history';
   const isVideo = activeKind === 'video';
   const browsingCategory = !isVideo && (category !== 'All' || query.trim());
-  const visibleCases = cases.slice(0, visibleLimit);
+  const imageCases = cases.filter(hasLibraryPreviewImage);
+  const promptOnlyCases = cases.filter((item) => !hasLibraryPreviewImage(item));
+  const visibleCases = imageCases.slice(0, visibleLimit);
+  const visiblePromptCases = promptOnlyCases.slice(0, Math.max(6, Math.ceil(visibleLimit / 2)));
+  const visibleLibraryCaseCount = visibleCases.length + visiblePromptCases.length;
   const videoNeedle = query.trim().toLowerCase();
   const visibleVideoInspirations = (videoInspirations || []).filter((item) => {
     if (!videoNeedle) return true;
@@ -1952,7 +2003,21 @@ function GalleryWorkspacePanel({
     const preview = templatePreviewImage(item);
     const fallback = templateThumbnail(item);
     const url = preview || fallback;
-    if (!url) return;
+    if (!url || item?.imageUnavailable) {
+      setGalleryPreview({
+        url: '',
+        promptOnly: true,
+        index: typeof item?.id === 'number' ? Math.max(0, item.id - 1) : 0,
+        downloadMeta: {
+          mode: 'library-reference',
+          providerId: 'library',
+          title: item?.title || t('gallery.preview', '查看'),
+          prompt: item?.prompt || item?.promptPreview || item?.summary || '',
+          createdAt: item?.createdAt || item?.updatedAt || ''
+        }
+      });
+      return;
+    }
     const fallbackUrl = preview && fallback && fallback !== preview ? fallback : '';
     setGalleryPreview({
       url,
@@ -2153,9 +2218,34 @@ function GalleryWorkspacePanel({
                 key={item.id}
               />
             ))}
-            {visibleLimit < cases.length ? (
+            {promptOnlyCases.length ? (
+              <section className="promptOnlyZone" aria-label={t('gallery.promptZone', '提示词专区')}>
+                <div className="promptOnlyZoneHead">
+                  <div>
+                    <span>{t('gallery.promptZone', '提示词专区')}</span>
+                    <strong>{t('gallery.promptZoneTitle', '没有可用图片，但提示词仍可选用')}</strong>
+                  </div>
+                  <em>{promptOnlyCases.length}</em>
+                </div>
+                <div className="promptOnlyGrid">
+                  {visiblePromptCases.map((item) => (
+                    <PromptCaseCard
+                      item={item}
+                      selected={selected?.id === item.id}
+                      onSelect={selectLibraryItem}
+                      favorite={favoriteTemplates.has(templateKey(item))}
+                      onToggleFavorite={onToggleTemplateFavorite}
+                      onAppend={useLibraryItem}
+                      t={t}
+                      key={item.id}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+            {visibleLimit < Math.max(imageCases.length, promptOnlyCases.length * 2) ? (
               <button type="button" className="loadMoreButton galleryLoadMore" onClick={() => setVisibleLimit((value) => value + TEMPLATE_PAGE_SIZE)}>
-                {t('gallery.loadMoreCount', '加载更多 {visible}/{total}', { visible: Math.min(visibleLimit, cases.length), total: cases.length })}
+                {t('gallery.loadMoreCount', '加载更多 {visible}/{total}', { visible: Math.min(visibleLibraryCaseCount, cases.length), total: cases.length })}
               </button>
             ) : null}
           </>
@@ -2175,6 +2265,7 @@ function GalleryWorkspacePanel({
       ) : null}
       <Lightbox
         url={galleryPreview?.url}
+        promptOnly={galleryPreview?.promptOnly}
         fallbackSrc={galleryPreview?.fallbackSrc || ''}
         index={galleryPreview?.index || 0}
         downloadMeta={galleryPreview?.downloadMeta}
@@ -7903,5 +7994,3 @@ function handleSelectHistory(item, options = {}) {
 }
 
 createRoot(document.getElementById('studio-root')).render(<StudioApp />);
-
-

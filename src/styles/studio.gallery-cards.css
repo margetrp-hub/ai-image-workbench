@@ -234,6 +234,132 @@
   min-height: 30px !important;
 }
 
+.promptOnlyZone {
+  grid-column: 1 / -1 !important;
+  margin-top: 4px !important;
+  padding: 14px !important;
+  display: grid !important;
+  gap: 12px !important;
+  border: 1px solid color-mix(in srgb, var(--studio-primary) 14%, var(--studio-border)) !important;
+  border-radius: 14px !important;
+  background: color-mix(in srgb, var(--studio-surface-strong) 94%, transparent) !important;
+}
+
+.promptOnlyZoneHead {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+}
+
+.promptOnlyZoneHead div {
+  min-width: 0 !important;
+  display: grid !important;
+  gap: 3px !important;
+}
+
+.promptOnlyZoneHead span {
+  color: var(--studio-primary) !important;
+  font-size: 11px !important;
+  font-weight: 950 !important;
+}
+
+.promptOnlyZoneHead strong {
+  color: var(--studio-text-strong) !important;
+  font-size: 14px !important;
+  font-weight: 950 !important;
+}
+
+.promptOnlyZoneHead em {
+  min-width: 32px !important;
+  height: 26px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--studio-primary) 12%, var(--studio-surface-soft)) !important;
+  color: var(--studio-primary) !important;
+  font-size: 12px !important;
+  font-style: normal !important;
+  font-weight: 950 !important;
+}
+
+.promptOnlyGrid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.galleryWorkspacePanel .inspirationCanvasGrid .caseTile.promptOnly,
+.galleryWorkspacePanel .inspirationCanvasGrid .caseTile.promptOnly .caseTileMain {
+  min-height: 150px !important;
+}
+
+.galleryWorkspacePanel .inspirationCanvasGrid .caseTile.promptOnly .caseTileMain {
+  padding: 14px 12px 48px !important;
+  grid-template-rows: auto auto 1fr auto !important;
+  gap: 8px !important;
+}
+
+.galleryWorkspacePanel .inspirationCanvasGrid .caseTile.promptOnly .caseTileMain > span {
+  position: static !important;
+  width: fit-content !important;
+  max-width: 100% !important;
+  background: color-mix(in srgb, var(--studio-primary) 12%, var(--studio-surface-soft)) !important;
+  color: var(--studio-primary) !important;
+}
+
+.galleryWorkspacePanel .inspirationCanvasGrid .caseTile.promptOnly .caseTileMain > strong {
+  grid-row: auto !important;
+  -webkit-line-clamp: 2 !important;
+}
+
+.casePromptExcerpt {
+  min-width: 0 !important;
+  margin: 0 !important;
+  display: -webkit-box !important;
+  overflow: hidden !important;
+  color: var(--studio-muted) !important;
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 3 !important;
+}
+
+.galleryWorkspacePanel .inspirationCanvasGrid .caseTile.promptOnly .caseTileMain > em {
+  grid-row: auto !important;
+}
+
+.lightboxPromptOnlyStage {
+  width: min(420px, 86%) !important;
+  min-height: 260px !important;
+  padding: 24px !important;
+  display: grid !important;
+  place-items: center !important;
+  align-content: center !important;
+  gap: 10px !important;
+  border: 1px dashed color-mix(in srgb, var(--studio-primary) 26%, var(--studio-border)) !important;
+  border-radius: 18px !important;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--studio-primary) 10%, transparent), transparent 58%),
+    color-mix(in srgb, var(--studio-surface-soft) 92%, transparent) !important;
+  color: var(--studio-primary) !important;
+  text-align: center !important;
+}
+
+.lightboxPromptOnlyStage strong {
+  color: var(--studio-text-strong) !important;
+  font-size: 18px !important;
+  font-weight: 950 !important;
+}
+
+.lightboxPromptOnlyStage p {
+  max-width: 280px !important;
+  margin: 0 !important;
+  color: var(--studio-muted) !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+}
+
 @media (max-width: 760px) {
   .gallerySelectionPreview {
     grid-template-columns: 88px minmax(0, 1fr) !important;

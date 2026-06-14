@@ -24,7 +24,9 @@ const envResponsesModel = String(envResponsesModelRaw).trim() === 'gpt-5.4'
 const envResponsesPartialImages = Number(import.meta.env.VITE_AI_RESPONSES_PARTIAL_IMAGES || import.meta.env.VITE_SUB2API_RESPONSES_PARTIAL_IMAGES || 2);
 const envPromptOptimizerModel = import.meta.env.VITE_AI_PROMPT_OPTIMIZER_MODEL || import.meta.env.VITE_SUB2API_PROMPT_OPTIMIZER_MODEL || '';
 const STUDIO_ASSET_BLOB_CACHE_LIMIT = 80;
+const STUDIO_ASSET_FAILURE_TTL_MS = 5 * 60 * 1000;
 const studioAssetBlobCache = new Map();
+const studioAssetFailureCache = new Map();
 
 const providerDefaults = {
   providerId: 'gateway-account',
@@ -369,6 +371,12 @@ function studioAssetCacheKey(baseUrl, url, session) {
 
 async function cachedStudioAssetBlob({ baseUrl, url, session }) {
   const cacheKey = studioAssetCacheKey(baseUrl, url, session);
+  const failedAt = studioAssetFailureCache.get(cacheKey);
+  if (failedAt && Date.now() - failedAt < STUDIO_ASSET_FAILURE_TTL_MS) {
+    throw new Error('ASSET_RECENTLY_FAILED');
+  }
+  if (failedAt) studioAssetFailureCache.delete(cacheKey);
+
   const cached = studioAssetBlobCache.get(cacheKey);
   if (cached) {
     studioAssetBlobCache.delete(cacheKey);
@@ -394,6 +402,11 @@ async function cachedStudioAssetBlob({ baseUrl, url, session }) {
     return blob;
   } catch (error) {
     studioAssetBlobCache.delete(cacheKey);
+    studioAssetFailureCache.set(cacheKey, Date.now());
+    while (studioAssetFailureCache.size > STUDIO_ASSET_BLOB_CACHE_LIMIT) {
+      const oldestKey = studioAssetFailureCache.keys().next().value;
+      studioAssetFailureCache.delete(oldestKey);
+    }
     throw error;
   }
 }

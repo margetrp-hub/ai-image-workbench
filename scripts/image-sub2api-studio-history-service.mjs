@@ -841,6 +841,8 @@ function sanitizeLibrarySummary(item) {
     sourceUrl: text(item.sourceUrl || item.githubUrl || item.sourceRepository, 600),
     sourceLicense: LIBRARY_LICENSE.spdx,
     attributionRequired: item.attributionRequired !== false,
+    imageUnavailable: Boolean(item.imageUnavailable),
+    imageUnavailableReason: text(item.imageUnavailableReason, 120),
     riskTags: Array.isArray(item.riskTags) ? item.riskTags.slice(0, 8).map((value) => text(value, 80)).filter(Boolean) : []
   };
 }

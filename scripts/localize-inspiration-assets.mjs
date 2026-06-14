@@ -12,6 +12,7 @@ const REPORT_FILE = path.resolve(process.env.STUDIO_LOCALIZE_REPORT || path.join
 const DRY_RUN = /^(1|true|yes)$/i.test(process.env.STUDIO_LOCALIZE_DRY_RUN || '');
 const FORCE = /^(1|true|yes)$/i.test(process.env.STUDIO_LOCALIZE_FORCE || '');
 const MAKE_THUMBNAILS = !/^(0|false|no)$/i.test(process.env.STUDIO_LOCALIZE_THUMBNAILS || 'true');
+const MARK_UNAVAILABLE = !/^(0|false|no)$/i.test(process.env.STUDIO_LOCALIZE_MARK_UNAVAILABLE || 'true');
 const LIMIT = Math.max(0, Number(process.env.STUDIO_LOCALIZE_LIMIT || 0));
 const CONCURRENCY = Math.max(1, Math.min(8, Number(process.env.STUDIO_LOCALIZE_CONCURRENCY || 3)));
 const TIMEOUT_MS = Math.max(5000, Number(process.env.STUDIO_LOCALIZE_TIMEOUT_MS || 45000));
@@ -190,6 +191,7 @@ async function main() {
     thumbnails: 0,
     skipped: 0,
     failed: 0,
+    markedUnavailable: 0,
     thumbnailCommand: magick || '',
     failures: []
   };
@@ -261,6 +263,16 @@ async function main() {
       }
     } catch (error) {
       report.failed += 1;
+      if (MARK_UNAVAILABLE) {
+        item.remoteImageUrl = remote.url;
+        item.imageUnavailable = true;
+        item.imageUnavailableReason = error.message;
+        item.imageUnavailableAt = new Date().toISOString();
+        for (const field of [...IMAGE_FIELDS, 'thumbnail', 'thumb', 'thumbnail_url', 'thumbnailUrl']) {
+          if (isRemoteUrl(item[field])) delete item[field];
+        }
+        report.markedUnavailable += 1;
+      }
       report.failures.push({ index, id: item.id || null, url: remote.url, error: error.message });
     }
   });
