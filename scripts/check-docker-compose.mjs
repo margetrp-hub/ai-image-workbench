@@ -41,7 +41,7 @@ assert(webPort?.target === 80 && String(webPort.published) === '8080', 'studio-w
 
 assert(history.environment?.STUDIO_AUTH_MODE === 'local', 'studio-history must default to local auth for standalone Docker.', history.environment);
 assert(history.environment?.STUDIO_DATA_DIR === '/data', 'studio-history must write persisted data to /data.', history.environment);
-assert(history.environment?.STUDIO_VERSION === '0.9.8', 'studio-history must expose the documented service version.', history.environment);
+assert(history.environment?.STUDIO_VERSION === '1.0.0', 'studio-history must expose the documented service version.', history.environment);
 assert(history.environment?.STUDIO_JOB_CONCURRENCY === '1', 'studio-history must default to conservative job concurrency.', history.environment);
 assert(history.environment?.STUDIO_ALLOWED_ORIGINS === 'https://studio.example.com', 'studio-history must read allowed origins from .env.example.', history.environment);
 assert(history.healthcheck?.test?.join(' ').includes('/studio-api/health'), 'studio-history healthcheck must verify /studio-api/health.', history.healthcheck);
@@ -62,7 +62,7 @@ assert(dockerDoc.includes('npm run ops:self-check'), 'Docker doc must include th
 assert(dockerDoc.includes('npm run ops:upgrade'), 'Docker doc must document the upgrade helper.');
 assert(dockerDoc.includes('STUDIO_SKIP_BACKUP=true'), 'Docker doc must mention the explicit backup bypass flag.');
 assert(dockerDoc.includes('STUDIO_SKIP_PULL=true'), 'Docker doc must mention the local-image pull bypass flag.');
-assert(dockerDoc.includes('STUDIO_VERSION=0.9.8'), 'Docker doc must document the Docker service version.');
+assert(dockerDoc.includes('STUDIO_VERSION=1.0.0'), 'Docker doc must document the Docker service version.');
 assert(deployDoc.includes('npm run check:docker') && deployDoc.includes('npm run smoke:docker'), 'Deploy doc must include Docker verification commands.');
 assert(upgradeScript.includes('ops-backup.mjs') && upgradeScript.includes('ops-self-check.mjs'), 'Upgrade script must run backup before deploy and self-check after deploy.');
 assert(upgradeScript.includes('STUDIO_SKIP_BACKUP') && upgradeScript.includes('STUDIO_SKIP_PULL'), 'Upgrade script must keep explicit backup/pull bypass flags.');

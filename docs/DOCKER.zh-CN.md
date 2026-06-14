@@ -22,7 +22,7 @@ cp .env.example .env
 STUDIO_PORT=8080
 AI_GATEWAY_UPSTREAM=http://host.docker.internal:8080
 VITE_AI_IMAGE_ROUTE=auto
-STUDIO_VERSION=0.9.8
+STUDIO_VERSION=1.0.0
 ```
 
 `VITE_AI_IMAGE_ROUTE=auto` 的含义是：
@@ -105,7 +105,7 @@ npm run ops:self-check
 预期：
 
 ```json
-{"ok":true,"service":"ai-image-workbench-history","version":"0.9.8"}
+{"ok":true,"service":"ai-image-workbench-history","version":"1.0.0"}
 ```
 
 如果要确认静态资源没有被 fallback 成 HTML，可以先从上一条命令里拿到 JS/CSS 文件名，再检查：
