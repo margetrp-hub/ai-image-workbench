@@ -1,4 +1,17 @@
-import { normalizeImageRouteMode, normalizeProviderId, resolveProviderAdapter } from './studio/providers/index.js';
+import {
+  compactGatewayObject,
+  createImageEditForm,
+  createImagesGenerationBody,
+  createResponsesImageBody,
+  isDirectImageResponsesModel,
+  resolveImageAdapterContext,
+  resolveImageEditAdapterContext,
+  responsesImageParams,
+  selectImageEditModel,
+  selectImageGenerationModel,
+  shouldFallbackToImagesTransport
+} from './gateway/index.js';
+import { normalizeImageRouteMode, normalizeProviderId } from './studio/providers/index.js';
 
 const SESSION_KEY = 'sub2api-studio:session:v1';
 const SELECTED_KEY_ID = 'sub2api-studio:selected-key-id:v1';
@@ -95,15 +108,6 @@ function normalizeResponsesModel(value) {
   return model === 'gpt-5.4' ? DEFAULT_RESPONSES_MODEL : model;
 }
 
-function providerDefaultModel(provider, key, fallback = '') {
-  const slotDefault = provider?.descriptor?.modelSlots?.find((slot) => slot?.key === key)?.defaultModel;
-  if (slotDefault) return slotDefault;
-  if (key === 'imageGenerationModel' || key === 'imageEditModel') return provider?.parameters?.defaultImageModel || fallback;
-  if (key === 'videoModel') return provider?.parameters?.defaultVideoModel || fallback;
-  if (key === 'responsesModel') return provider?.parameters?.defaultAssistantModel || fallback;
-  return fallback;
-}
-
 function imageMimeType(format) {
   const normalized = String(format || 'png').toLowerCase();
   if (normalized === 'jpg' || normalized === 'jpeg') return 'image/jpeg';
@@ -124,26 +128,7 @@ function fileToDataUrl(file) {
   });
 }
 
-function compactObject(value = {}) {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, item]) => item !== undefined && item !== null && item !== '')
-  );
-}
-
-function isDirectImageResponsesModel(value) {
-  const model = String(value || '').toLowerCase();
-  return /(^|[^a-z0-9])(gpt-)?image[-_a-z0-9]*\d/.test(model)
-    || /(^|[^a-z0-9])dall[-_a-z0-9]*\d/.test(model);
-}
-
-function responsesImageParams({ size, quality, outputFormat, moderation }) {
-  return compactObject({
-    size: size || 'auto',
-    quality: quality || 'auto',
-    output_format: outputFormat || 'png',
-    moderation: moderation || 'auto'
-  });
-}
+const compactObject = compactGatewayObject;
 
 function sleep(ms, signal) {
   return new Promise((resolve, reject) => {
@@ -751,26 +736,6 @@ async function readResponsesStream(response, onEvent, signal) {
   return { finalResponse, fallbackItem };
 }
 
-function shouldFallbackToLegacy(error) {
-  const status = Number(error?.status || 0);
-  if ([404, 405, 415, 502, 503, 504].includes(status)) return true;
-
-  const message = String(
-    error?.payload?.error?.message
-      || error?.payload?.message
-      || error?.message
-      || ''
-  ).toLowerCase();
-
-  return (
-    message.includes('tool_choice')
-    || message.includes('image_generation')
-    || message.includes('responses')
-    || message.includes('stream')
-    || message.includes('sse')
-  );
-}
-
 function sessionFromAuthResponse(data, previousSession = {}) {
   return {
     accessToken: data.access_token,
@@ -975,13 +940,7 @@ export class AiGatewayClient {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          model,
-          prompt,
-          size,
-          quality,
-          n: 1
-        }),
+        body: JSON.stringify(createImagesGenerationBody({ model, prompt, size, quality })),
         ...(signal ? { signal } : {})
       });
       const payload = await readJsonResponse(response);
@@ -1361,24 +1320,13 @@ export class AiGatewayClient {
           'Content-Type': 'application/json',
           Accept: directImageModel ? 'application/json' : 'text/event-stream'
         },
-        body: JSON.stringify(directImageModel
-          ? {
-            model: responseModel,
-            input,
-            ...imageParams
-          }
-          : {
-            model: responseModel,
-            input,
-            stream: true,
-            tools: [
-              {
-                type: 'image_generation',
-                partial_images: partialImageCount,
-                ...imageParams
-              }
-            ]
-          }),
+        body: JSON.stringify(createResponsesImageBody({
+          model: responseModel,
+          input,
+          directImageModel,
+          partialImageCount,
+          imageParams
+        })),
         ...(signal ? { signal } : {})
       });
 
@@ -1478,20 +1426,21 @@ export class AiGatewayClient {
   }
 
   async generateImage({ apiKey, model, prompt, size, quality, outputFormat, moderation, n, referenceImages, onPartial, onProgress, route, gatewayBaseUrl, responsesModel, partialImages, signal }) {
-    const explicitRoute = route === undefined || route === null || route === '' ? '' : route;
-    const adapter = resolveProviderAdapter({
-      providerId: this.providerSettings.providerId,
-      authMode: this.providerSettings.apiKeySource
+    const { adapter, normalizedParameters, plan } = resolveImageAdapterContext({
+      providerSettings: this.providerSettings,
+      route,
+      parameters: {
+        size,
+        quality,
+        outputFormat,
+        moderation,
+        n
+      }
     });
-    const normalizedParameters = adapter.normalizeImageParameters({
-      size,
-      quality,
-      outputFormat,
-      moderation,
-      n
-    });
-    const plan = adapter.buildGenerationPlan({
-      requestedRoute: explicitRoute || this.providerSettings.route || 'auto'
+    const imageModel = selectImageGenerationModel({
+      requestedModel: model,
+      providerSettings: this.providerSettings,
+      provider: adapter.provider
     });
     if (plan.transport === 'responses') {
       try {
@@ -1503,7 +1452,7 @@ export class AiGatewayClient {
           outputFormat: normalizedParameters.outputFormat,
           moderation: normalizedParameters.moderation,
           n: normalizedParameters.n,
-          model: String(model || this.providerSettings.imageGenerationModel || providerDefaultModel(adapter.provider, 'imageGenerationModel', 'gpt-image-2')).trim(),
+          model: imageModel,
           referenceImages,
           onPartial,
           onProgress,
@@ -1514,7 +1463,7 @@ export class AiGatewayClient {
           signal
         });
       } catch (error) {
-        if (!plan.allowImagesFallback || !shouldFallbackToLegacy(error)) {
+        if (!plan.allowImagesFallback || !shouldFallbackToImagesTransport(error)) {
           throw error;
         }
       }
@@ -1522,7 +1471,7 @@ export class AiGatewayClient {
 
     return this.generateImageViaLegacy({
       apiKey,
-      model: String(model || this.providerSettings.imageGenerationModel || providerDefaultModel(adapter.provider, 'imageGenerationModel', 'gpt-image-2')).trim(),
+      model: imageModel,
       prompt,
       size: normalizedParameters.size,
       quality: normalizedParameters.quality,
@@ -1537,16 +1486,15 @@ export class AiGatewayClient {
   }
 
   async editImage({ apiKey, model, prompt, size, quality, outputFormat, moderation, n, images, mask, gatewayBaseUrl, onProgress, signal }) {
-    const adapter = resolveProviderAdapter({
-      providerId: this.providerSettings.providerId,
-      authMode: this.providerSettings.apiKeySource
-    });
-    const normalizedParameters = adapter.normalizeImageParameters({
-      size,
-      quality,
-      outputFormat,
-      moderation,
-      n
+    const { adapter, normalizedParameters, plan } = resolveImageEditAdapterContext({
+      providerSettings: this.providerSettings,
+      parameters: {
+        size,
+        quality,
+        outputFormat,
+        moderation,
+        n
+      }
     });
     onProgress?.({
       stage: 'request',
@@ -1554,18 +1502,21 @@ export class AiGatewayClient {
       total: normalizedParameters.n,
       percent: 12
     });
-    const form = new FormData();
-    form.set('model', String(model || this.providerSettings.imageEditModel || this.providerSettings.imageGenerationModel || providerDefaultModel(adapter.provider, 'imageEditModel', 'gpt-image-2')).trim());
-    form.set('prompt', prompt);
-    form.set('size', normalizedParameters.size);
-    form.set('quality', normalizedParameters.quality);
-    form.set('output_format', normalizedParameters.outputFormat);
-    form.set('moderation', normalizedParameters.moderation);
-    form.set('n', String(normalizedParameters.n));
-    images.forEach((file) => form.append('image', file));
-    if (mask) form.set('mask', mask);
-
-    const plan = adapter.buildEditPlan();
+    const form = createImageEditForm({
+      model: selectImageEditModel({
+        requestedModel: model,
+        providerSettings: this.providerSettings,
+        provider: adapter.provider
+      }),
+      prompt,
+      size: normalizedParameters.size,
+      quality: normalizedParameters.quality,
+      outputFormat: normalizedParameters.outputFormat,
+      moderation: normalizedParameters.moderation,
+      n: normalizedParameters.n,
+      images,
+      mask
+    });
     const response = await fetch(gatewayEndpointUrl(gatewayBaseUrl || this.gatewayBaseUrl, plan.endpoint), {
       method: 'POST',
       headers: {

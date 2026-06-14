@@ -1,0 +1,243 @@
+/* Reference rail polish: once images exist, make them the primary object. */
+.referenceSideBody.hasReferenceItems {
+  display: grid;
+  grid-template-rows: 48px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.referenceSideBody.hasReferenceItems .sideUploadDrop {
+  min-height: 48px !important;
+  height: 48px !important;
+  padding: 0 12px !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 14px !important;
+}
+
+.referenceSideBody.hasReferenceItems .sideUploadDrop svg {
+  width: 15px;
+  height: 15px;
+}
+
+.referenceSideBody.hasReferenceItems .sideUploadDrop span {
+  font-size: 11px !important;
+  font-weight: 900;
+}
+
+.referenceSideBody.hasReferenceItems .sideReferenceThumbs {
+  align-content: start;
+  gap: 10px !important;
+}
+
+.referenceSideBody.hasReferenceItems .sideReferenceThumbs figure {
+  aspect-ratio: 0.92 !important;
+  min-height: 116px !important;
+  border-radius: 16px !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--studio-border) 46%, transparent);
+}
+
+.referenceSideBody.hasReferenceItems .sideReferenceThumbs img {
+  padding: 4px;
+  object-fit: contain !important;
+}
+
+.referenceSideBody.hasReferenceItems .sideReferenceThumbs figcaption {
+  min-height: 28px !important;
+  padding: 4px 5px !important;
+}
+
+/* Chat bubble guardrail: never let Chinese messages collapse into a vertical strip. */
+.creationDesk.composerOpen .composerThread {
+  min-width: 0 !important;
+}
+
+.creationDesk.composerOpen .composerMessage,
+.creationDesk.composerOpen .composerThread .promptSuggestion.composerMessage {
+  width: auto !important;
+  min-width: min(220px, 100%) !important;
+  max-width: min(680px, calc(100% - 42px)) !important;
+  box-sizing: border-box;
+}
+
+.creationDesk.composerOpen .composerMessage.user {
+  min-width: min(220px, 78%) !important;
+  max-width: min(640px, calc(100% - 42px)) !important;
+}
+
+.creationDesk.composerOpen .composerMessage p,
+.creationDesk.composerOpen .promptSuggestionBody,
+.creationDesk.composerOpen .promptSuggestionBody span {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed !important;
+  white-space: pre-wrap !important;
+  word-break: normal !important;
+  overflow-wrap: anywhere !important;
+  text-align: left !important;
+}
+
+.creationDesk.composerOpen .composerMessage.user p {
+  justify-self: stretch;
+}
+
+@media (max-width: 760px) {
+  .creationDesk.composerOpen .composerMessage,
+  .creationDesk.composerOpen .composerMessage.user,
+  .creationDesk.composerOpen .composerThread .promptSuggestion.composerMessage {
+    min-width: min(180px, 100%) !important;
+    max-width: calc(100% - 12px) !important;
+  }
+}
+
+/* Reference context should support the prompt, not compete with it. */
+.composerReferenceStrip {
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  min-height: 36px !important;
+  padding: 3px 5px 3px 6px !important;
+  gap: 6px !important;
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--studio-surface-soft) 50%, transparent) !important;
+}
+
+.composerReferenceMeta {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-surface-strong) 86%, transparent);
+  cursor: pointer;
+}
+
+.composerReferenceMeta:hover {
+  color: var(--studio-primary);
+  background: color-mix(in srgb, var(--studio-primary) 10%, var(--studio-surface-strong));
+}
+
+.composerReferencePeek {
+  min-width: 0;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.composerReferencePeek span,
+.composerReferencePeek b {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  margin-left: -7px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 2px solid color-mix(in srgb, var(--studio-surface-strong) 92%, transparent);
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--studio-surface-strong) 84%, transparent);
+  background-position: center;
+  background-size: cover;
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--studio-text) 8%, transparent);
+}
+
+.composerReferencePeek span:first-child,
+.composerReferencePeek b:first-child {
+  margin-left: 0;
+}
+
+.composerReferencePeek b {
+  color: var(--studio-primary);
+  font-size: 10px;
+  font-weight: 950;
+  font-style: normal;
+}
+
+.composerReferenceActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.composerReferenceActions .composerReferenceAdd {
+  width: auto !important;
+  min-width: 58px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 0 9px !important;
+  display: inline-flex !important;
+  gap: 5px;
+  border-radius: 999px !important;
+}
+
+.composerReferenceActions .composerReferenceAdd span {
+  display: inline !important;
+}
+
+.composerReferenceActions .composerReferenceManage {
+  min-height: 28px !important;
+  height: 28px !important;
+}
+
+.composerReferenceThumbs,
+.composerReferenceThumb {
+  display: none !important;
+}
+
+/* Keep right-side reference thumbnails inspectable; editing controls should not dominate the image. */
+.referenceSideBody.hasReferenceItems .sideReferenceThumbs figure {
+  position: relative;
+}
+
+.referenceSideBody.hasReferenceItems .sideReferenceThumbs .referenceThumbActions {
+  top: 7px !important;
+  right: 7px !important;
+  display: flex;
+  gap: 4px;
+  opacity: 0.28;
+  transform: translateY(-2px);
+  transition:
+    opacity 150ms ease,
+    transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.referenceSideBody.hasReferenceItems .sideReferenceThumbs figure:hover .referenceThumbActions,
+.referenceSideBody.hasReferenceItems .sideReferenceThumbs figure:focus-within .referenceThumbActions {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.referenceSideBody.hasReferenceItems .sideReferenceThumbs .referenceThumbActions button,
+.referenceSideBody.hasReferenceItems .videoReferenceThumbs > figure > button:not(.referencePreviewButton) {
+  width: 23px !important;
+  min-width: 23px !important;
+  height: 23px !important;
+  min-height: 23px !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--studio-text-strong) 78%, transparent) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--studio-text-strong) 18%, transparent);
+}
+
+.referenceSideBody.hasReferenceItems .sideReferenceThumbs .referenceThumbActions button:disabled {
+  opacity: 0.28;
+}
+
+.referenceSideBody.hasReferenceItems .sideReferenceThumbs figcaption span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.referenceSideBody.hasReferenceItems .referencePreviewButton {
+  min-height: 0;
+  display: grid;
+  place-items: center;
+}
+
+.referenceSideBody.hasReferenceItems .sideReferenceThumbs img {
+  max-width: 100%;
+  max-height: 100%;
+}

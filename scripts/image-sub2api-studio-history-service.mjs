@@ -4,6 +4,10 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createCommunityPromptStore, sanitizeCommunityPrompt } from './studio-service/communityPrompts.js';
+import { text } from './studio-service/text.js';
+import { createUserBackupService } from './studio-service/userBackup.js';
+import { createUserStorage } from './studio-service/userStorage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || process.env.STUDIO_HISTORY_PORT || 8787);
@@ -312,6 +316,38 @@ function parseJsonText(raw) {
   return JSON.parse(String(raw || '').replace(/^\uFEFF/, ''));
 }
 
+const userStorage = createUserStorage({
+  historyLimit: HISTORY_LIMIT,
+  sessionAssetPrefix: SESSION_ASSET_PREFIX,
+  parseJsonText
+});
+const {
+  ensureUserDirs,
+  sessionPath,
+  sessionPathForId,
+  sessionsDir,
+  sessionAssetId,
+  jobsPath,
+  communityPromptsPath,
+  backupsDir,
+  readRecords,
+  writeRecords,
+  readSession,
+  writeSession,
+  readSessionSnapshot
+} = userStorage;
+
+const communityPromptStore = createCommunityPromptStore({
+  ensureUserDirs,
+  communityPromptsPath,
+  parseJsonText,
+  limit: COMMUNITY_PROMPT_LIMIT
+});
+const {
+  readCommunityPrompts,
+  writeCommunityPrompts
+} = communityPromptStore;
+
 function normalizeGatewayAccountPayload(payload) {
   if (payload && typeof payload === 'object' && 'code' in payload) {
     if (payload.code === 0) return payload.data;
@@ -370,145 +406,6 @@ async function authenticate(req) {
     userKey: key,
     userDir: path.join(DATA_DIR, 'users', key)
   };
-}
-
-async function ensureUserDirs(auth) {
-  await fs.mkdir(path.join(auth.userDir, 'assets'), { recursive: true });
-  await fs.mkdir(path.join(auth.userDir, 'jobs'), { recursive: true });
-}
-
-function recordsPath(auth) {
-  return path.join(auth.userDir, 'records.json');
-}
-
-function sessionPath(auth) {
-  return path.join(auth.userDir, 'session.json');
-}
-
-function sessionPathForId(auth, sessionId = '') {
-  const safeId = text(sessionId, 120);
-  return safeId ? path.join(auth.userDir, 'sessions', `${safeId}.json`) : sessionPath(auth);
-}
-
-function sessionsDir(auth) {
-  return path.join(auth.userDir, 'sessions');
-}
-
-function sessionAssetId(sessionId = '') {
-  const safeId = text(sessionId, 120);
-  return safeId ? `${SESSION_ASSET_PREFIX}${safeId}` : 'session-current';
-}
-
-function jobsPath(auth) {
-  return path.join(auth.userDir, 'jobs.json');
-}
-
-function communityPromptsPath(auth) {
-  return path.join(auth.userDir, 'community-prompts.json');
-}
-
-function backupsDir(auth) {
-  return path.join(auth.userDir, 'backups');
-}
-
-async function readRecords(auth) {
-  try {
-    const raw = await fs.readFile(recordsPath(auth), 'utf8');
-    const parsed = parseJsonText(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (error) {
-    if (error.code === 'ENOENT') return [];
-    throw error;
-  }
-}
-
-async function writeRecords(auth, records) {
-  await ensureUserDirs(auth);
-  await fs.writeFile(recordsPath(auth), JSON.stringify(records.slice(0, HISTORY_LIMIT), null, 2));
-}
-
-function sanitizeCommunityPrompt(value, fallback = {}) {
-  const createdAt = text(value?.createdAt || fallback.createdAt || new Date().toISOString(), 60);
-  const prompt = text(value?.prompt, 12000);
-  const title = text(value?.title || prompt.slice(0, 80) || 'Untitled prompt', 160);
-  const category = text(value?.category || 'Community Prompts', 120);
-  const id = text(value?.id || fallback.id || `share-${randomUUID()}`, 120);
-  const reactions = value?.reactions && typeof value.reactions === 'object' ? value.reactions : {};
-  const up = Math.max(0, Number(reactions.up || value?.up || 0));
-  const down = Math.max(0, Number(reactions.down || value?.down || 0));
-  return {
-    id,
-    kind: 'community-prompt',
-    title,
-    prompt,
-    promptPreview: text(value?.promptPreview || prompt, 800),
-    category,
-    sourceName: text(value?.sourceName || 'User shared', 120),
-    note: text(value?.note || '', 800),
-    tags: Array.isArray(value?.tags) ? value.tags.slice(0, 8).map((item) => text(item, 40)).filter(Boolean) : [],
-    visibility: value?.visibility === 'private' ? 'private' : 'workspace',
-    createdAt,
-    updatedAt: text(value?.updatedAt || createdAt, 60),
-    reactions: { up, down },
-    copied: Math.max(0, Number(value?.copied || 0)),
-    shared: Math.max(0, Number(value?.shared || 0)),
-    userReaction: ['up', 'down'].includes(value?.userReaction) ? value.userReaction : ''
-  };
-}
-
-async function readCommunityPrompts(auth) {
-  try {
-    const raw = await fs.readFile(communityPromptsPath(auth), 'utf8');
-    const parsed = parseJsonText(raw);
-    const items = Array.isArray(parsed?.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
-    return items.map((item) => sanitizeCommunityPrompt(item)).filter((item) => item.prompt);
-  } catch (error) {
-    if (error.code === 'ENOENT') return [];
-    throw error;
-  }
-}
-
-async function writeCommunityPrompts(auth, items) {
-  await ensureUserDirs(auth);
-  const nextItems = items
-    .map((item) => sanitizeCommunityPrompt(item))
-    .filter((item) => item.prompt)
-    .slice(0, COMMUNITY_PROMPT_LIMIT);
-  await fs.writeFile(communityPromptsPath(auth), JSON.stringify({ items: nextItems }, null, 2));
-  return nextItems;
-}
-
-async function readSession(auth, sessionId = '') {
-  try {
-    const raw = await fs.readFile(sessionPathForId(auth, sessionId), 'utf8');
-    const parsed = parseJsonText(raw);
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch (error) {
-    if (error.code === 'ENOENT') return null;
-    throw error;
-  }
-}
-
-async function writeSession(auth, session, sessionId = '') {
-  await ensureUserDirs(auth);
-  if (sessionId) await fs.mkdir(path.dirname(sessionPathForId(auth, sessionId)), { recursive: true });
-  await fs.writeFile(sessionPathForId(auth, sessionId), JSON.stringify(session, null, 2));
-}
-
-async function readSessionSnapshot(auth) {
-  const legacy = await readSession(auth);
-  const sessions = [];
-  const entries = await fs.readdir(sessionsDir(auth), { withFileTypes: true }).catch((error) => {
-    if (error.code === 'ENOENT') return [];
-    throw error;
-  });
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
-    const sessionId = entry.name.slice(0, -5);
-    const session = await readSession(auth, sessionId);
-    if (session) sessions.push(session);
-  }
-  return { legacy, sessions };
 }
 
 function jobRuntimeKey(auth, jobId) {
@@ -621,172 +518,25 @@ async function upsertJob(auth, job) {
   });
 }
 
-async function listFilesRecursive(rootDir, baseDir = rootDir) {
-  const entries = await fs.readdir(rootDir, { withFileTypes: true }).catch((error) => {
-    if (error.code === 'ENOENT') return [];
-    throw error;
-  });
-  const files = [];
-  for (const entry of entries) {
-    const fullPath = path.join(rootDir, entry.name);
-    if (entry.isDirectory()) {
-      files.push(...await listFilesRecursive(fullPath, baseDir));
-      continue;
-    }
-    if (!entry.isFile()) continue;
-    files.push({
-      path: path.relative(baseDir, fullPath).split(path.sep).join('/'),
-      fullPath
-    });
-  }
-  return files;
-}
-
-function safeBackupAssetPath(rawPath) {
-  const value = String(rawPath || '').replace(/\\/g, '/');
-  const segments = value.split('/').filter(Boolean);
-  if (!segments.length || segments.some((segment) => segment === '..' || segment.includes('\0'))) return '';
-  return segments.join('/');
-}
-
-async function readAssetSnapshot(auth) {
-  const root = path.join(auth.userDir, 'assets');
-  const files = await listFilesRecursive(root);
-  const assets = [];
-  for (const file of files) {
-    const safePath = safeBackupAssetPath(file.path);
-    if (!safePath) continue;
-    const buffer = await fs.readFile(file.fullPath);
-    assets.push({
-      path: safePath,
-      bytes: buffer.length,
-      data: buffer.toString('base64')
-    });
-  }
-  return assets;
-}
-
-async function buildUserBackup(auth, reason = 'manual') {
-  const [records, sessionSnapshot, jobs, communityPrompts, assets] = await Promise.all([
-    readRecords(auth),
-    readSessionSnapshot(auth),
-    readJobs(auth),
-    readCommunityPrompts(auth),
-    readAssetSnapshot(auth)
-  ]);
-  return {
-    ok: true,
-    kind: 'ai-image-workbench.user-backup',
-    version: 1,
-    serviceVersion: SERVICE_VERSION,
-    createdAt: new Date().toISOString(),
-    reason,
-    user: {
-      id: auth.user?.id || auth.user?.user?.id || auth.user?.email || auth.user?.username || auth.userKey,
-      key: auth.userKey
-    },
-    counts: {
-      records: records.length,
-      jobs: jobs.length,
-      communityPrompts: communityPrompts.length,
-      assets: assets.length,
-      hasSession: Boolean(sessionSnapshot.legacy) || sessionSnapshot.sessions.length > 0,
-      sessions: sessionSnapshot.sessions.length
-    },
-    data: {
-      records,
-      session: sessionSnapshot.legacy,
-      sessions: sessionSnapshot.sessions,
-      jobs,
-      communityPrompts,
-      assets
-    }
-  };
-}
-
-async function saveUserBackup(auth, reason = 'pre-restore') {
-  await fs.mkdir(backupsDir(auth), { recursive: true });
-  const backup = await buildUserBackup(auth, reason);
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const fileName = `${stamp}-${reason}.json`;
-  const filePath = path.join(backupsDir(auth), fileName);
-  await fs.writeFile(filePath, JSON.stringify(backup, null, 2));
-  return { fileName, filePath, backup };
-}
-
-function validateUserBackup(payload) {
-  if (!payload || typeof payload !== 'object') {
-    const error = new Error('BACKUP_PAYLOAD_REQUIRED');
-    error.status = 400;
-    throw error;
-  }
-  if (payload.kind !== 'ai-image-workbench.user-backup' || payload.version !== 1) {
-    const error = new Error('BACKUP_FORMAT_UNSUPPORTED');
-    error.status = 400;
-    throw error;
-  }
-  const data = payload.data || {};
-  return {
-    records: Array.isArray(data.records) ? data.records : [],
-    session: data.session && typeof data.session === 'object' ? data.session : null,
-    sessions: Array.isArray(data.sessions) ? data.sessions.filter((session) => session && typeof session === 'object') : [],
-    jobs: Array.isArray(data.jobs) ? data.jobs : [],
-    communityPrompts: Array.isArray(data.communityPrompts) ? data.communityPrompts : [],
-    assets: Array.isArray(data.assets) ? data.assets : []
-  };
-}
-
-async function restoreAssetSnapshot(auth, assets) {
-  const root = path.join(auth.userDir, 'assets');
-  await fs.rm(root, { recursive: true, force: true });
-  await fs.mkdir(root, { recursive: true });
-  for (const asset of assets) {
-    const safePath = safeBackupAssetPath(asset?.path);
-    if (!safePath || typeof asset?.data !== 'string') continue;
-    const filePath = path.join(root, ...safePath.split('/'));
-    const relative = path.relative(root, filePath);
-    if (relative.startsWith('..') || path.isAbsolute(relative)) continue;
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, Buffer.from(asset.data, 'base64'));
-  }
-}
-
-async function restoreUserBackup(auth, payload) {
-  const snapshot = validateUserBackup(payload);
-  const preRestore = await saveUserBackup(auth, 'pre-restore');
-  await ensureUserDirs(auth);
-  await writeRecords(auth, snapshot.records);
-  if (snapshot.session) {
-    await writeSession(auth, snapshot.session);
-  } else {
-    await fs.rm(sessionPath(auth), { force: true });
-  }
-  await fs.rm(sessionsDir(auth), { recursive: true, force: true });
-  for (const session of snapshot.sessions) {
-    const sessionId = text(session.sessionId, 120);
-    if (sessionId) await writeSession(auth, session, sessionId);
-  }
-  await writeJobs(auth, snapshot.jobs);
-  await writeCommunityPrompts(auth, snapshot.communityPrompts);
-  await restoreAssetSnapshot(auth, snapshot.assets);
-  return {
-    ok: true,
-    restoredAt: new Date().toISOString(),
-    preRestoreBackup: preRestore.fileName,
-    counts: {
-      records: snapshot.records.length,
-      jobs: snapshot.jobs.length,
-      communityPrompts: snapshot.communityPrompts.length,
-      assets: snapshot.assets.length,
-      hasSession: Boolean(snapshot.session) || snapshot.sessions.length > 0,
-      sessions: snapshot.sessions.length
-    }
-  };
-}
-
-function text(value, length) {
-  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, length);
-}
+const userBackupService = createUserBackupService({
+  serviceVersion: SERVICE_VERSION,
+  ensureUserDirs,
+  backupsDir,
+  sessionPath,
+  sessionsDir,
+  readRecords,
+  writeRecords,
+  readSessionSnapshot,
+  writeSession,
+  readJobs,
+  writeJobs,
+  readCommunityPrompts,
+  writeCommunityPrompts
+});
+const {
+  buildUserBackup,
+  restoreUserBackup
+} = userBackupService;
 
 function isLikelyGarbledText(value) {
   const body = String(value || '').trim();

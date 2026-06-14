@@ -4,3 +4,4 @@
 
 export * from './indexedDb.js';
 export * from './historyStore.js';
+export * from './historyPersistence.js';
