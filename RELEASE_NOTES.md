@@ -1,10 +1,10 @@
 # Release Notes
 
-## 0.9.8
+## 1.0.0
 
-This release is the first step toward a real 1.0 beta, but it is intentionally not labeled 1.0 yet.
+This release marks AI Image Workbench as a standalone self-hosted image creation workstation, with Sub2API kept as one compatible gateway path rather than the project identity.
 
-AI Image Workbench is moving from an early gateway-specific starter into a standalone image creation workstation that can run with an OpenAI-compatible gateway, while still keeping backward compatibility with existing Sub2API deployments.
+The 1.0.0 line focuses on a stable creation loop: prompt conversation, reference images, direct image-generation routes, recoverable generation jobs, persistent history, large-canvas performance, Docker/VPS deployment, and a clearer provider abstraction for official APIs, OpenAI-compatible gateways, NewAPI-style gateways, Sub2API, and future model/video adapters.
 
 ### What Changed
 
@@ -31,10 +31,13 @@ AI Image Workbench is moving from an early gateway-specific starter into a stand
 - Large-canvas performance mode virtualizes offscreen image/video nodes and reduces SVG line animation load.
 - Manual provider API keys are session-only in the browser. Provider configuration can persist, but raw manually entered API keys are migrated out of `localStorage` and kept only in `sessionStorage` for the current browser session.
 - The local release gate now includes documentation encoding checks, so broken README or docs mojibake is caught before publishing.
+- The large legacy composer and polish styles were split into focused CSS modules, reducing the chance that future UI work changes unrelated panels by accident.
 
-### Why This Is Not 1.0 Yet
+### Compatibility Notes
 
-The workbench now has a cleaner standalone deployment shape and generic gateway naming, but the provider abstraction is still transitional. A true 1.0 should finish the provider registry, make model capabilities explicit per provider, and document a stable extension path for OpenAI, NewAPI, Sub2API, and other compatible gateways.
+- Existing `image-sub2api-studio-*` package names, service paths, systemd service names, and data directories remain supported so old VPS installs can upgrade without losing history or protected library assets.
+- New deployments should prefer the `ai-image-workbench-*` package names and generic `AI_GATEWAY_*` / `VITE_AI_*` environment names.
+- `/v1/responses` image generation is treated as an explicit compatibility path only. The default image path is `/v1/images/generations`, and reference or Mask edits use `/v1/images/edits`.
 
 ## 0.8.1
 
@@ -116,7 +119,7 @@ Do not run `docker compose down -v` unless you intend to delete history, jobs, a
 - `/studio/studio-assets/*.js` returns `application/javascript`, not `text/html`.
 - `/studio/studio-assets/*.css` returns `text/css`, not `text/html`.
 - `/studio-api/health` returns `{"ok":true}`.
-- A normal image request appears in Sub2API logs as `/v1/images/generations`.
+- A normal image request appears in gateway logs as `/v1/images/generations`.
 - A reference image or Mask request appears as `/v1/images/edits`.
 - A prompt assistant request appears as `/v1/chat/completions`.
 - Refreshing during or after generation does not remove persisted results from the current canvas/history gallery.
@@ -131,6 +134,6 @@ Do not run `docker compose down -v` unless you intend to delete history, jobs, a
 
 ## Known Limits
 
-- Stopping the browser wait does not guarantee upstream cancellation once Sub2API has accepted the request.
-- If the service restarts while a job is already in flight, the job can become `unknown`; check Sub2API logs and the history gallery before retrying.
+- Stopping the browser wait does not guarantee upstream cancellation once the upstream gateway has accepted the request.
+- If the service restarts while a job is already in flight, the job can become `unknown`; check gateway logs and the history gallery before retrying.
 - Any prompt or asset returned to a browser can be inspected by that user. Use authenticated library APIs for private materials.

@@ -43,6 +43,11 @@ import {
 } from 'lucide-react';
 import './studio.css';
 import './styles/studio.legacy-polish.css';
+import './styles/studio.polish-reference-chat.css';
+import './styles/studio.polish-concept-composer.css';
+import './styles/studio.polish-modern-console.css';
+import './styles/studio.polish-prompt-first.css';
+import './styles/studio.polish-conversation-rail.css';
 import './styles/studio.canvas-workspace.css';
 import './styles/studio.composer-overrides.css';
 import './styles/studio.composer-compact-shell.css';
@@ -64,6 +69,12 @@ import './styles/studio.interactions.css';
 import './styles/studio.gallery-cards.css';
 import './styles/studio.final-state.css';
 import './styles/studio.composer-final-overrides.css';
+import './styles/studio.composer-final-base.css';
+import './styles/studio.composer-final-beta.css';
+import './styles/studio.composer-final-tooling.css';
+import './styles/studio.composer-final-modal.css';
+import './styles/studio.composer-final-locks.css';
+import './styles/studio.composer-final-live.css';
 import './styles/studio.composer-live-guards.css';
 import {
   AiGatewayClient,

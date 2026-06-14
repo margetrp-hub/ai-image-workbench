@@ -1,0 +1,203 @@
+﻿/* UI polish pass: reference rail and chat readability. Queue styles live in styles/studio.queue-progress.css. */
+.creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer .composerThread {
+  scrollbar-gutter: stable !important;
+  mask-image: linear-gradient(to bottom, transparent 0, transparent 14px, #000 38px, #000 calc(100% - 16px), transparent 100%) !important;
+}
+
+.creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer .composerMessageBubble,
+.creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer .composerMessage.user p {
+  transition:
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 160ms ease,
+    border-color 160ms ease !important;
+}
+
+.creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer .composerMessage:hover .composerMessageBubble,
+.creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer .composerMessage.user:hover p {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06) !important;
+}
+
+.studioLayout .creationDesk .referenceSidePanel.isOpen {
+  border-left: 1px solid color-mix(in srgb, var(--studio-border) 50%, transparent) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--studio-surface) 96%, transparent), color-mix(in srgb, var(--studio-surface-soft) 86%, transparent)) !important;
+}
+
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideHead,
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideFoot {
+  background: transparent !important;
+}
+
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideBody:not(.hasReferenceItems) {
+  align-content: start !important;
+  padding-top: 26px !important;
+}
+
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideBody:not(.hasReferenceItems) .sideUploadDrop {
+  min-height: 156px !important;
+  border-radius: 20px !important;
+  border-style: dashed !important;
+  background:
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--studio-primary) 10%, transparent), transparent 58%),
+    color-mix(in srgb, var(--studio-surface-soft) 76%, transparent) !important;
+}
+
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideBody.hasReferenceItems .sideReferenceThumbs {
+  gap: 12px !important;
+  padding-right: 2px !important;
+}
+
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideBody.hasReferenceItems .sideReferenceThumbs figure {
+  border-radius: 18px !important;
+  background: color-mix(in srgb, var(--studio-surface-strong) 90%, transparent) !important;
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms ease,
+    border-color 180ms ease !important;
+}
+
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideBody.hasReferenceItems .sideReferenceThumbs figure:hover,
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideBody.hasReferenceItems .sideReferenceThumbs figure:focus-within {
+  transform: translateY(-2px) scale(1.01) !important;
+  border-color: color-mix(in srgb, var(--studio-primary) 34%, var(--studio-border)) !important;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.09) !important;
+}
+
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideBody.hasReferenceItems .referencePreviewButton {
+  overflow: hidden !important;
+  border-radius: 16px !important;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--studio-primary) 6%, transparent), transparent 48%),
+    color-mix(in srgb, var(--studio-surface-soft) 72%, transparent) !important;
+}
+
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideBody.hasReferenceItems .referencePreviewButton img,
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideBody.hasReferenceItems .referencePreviewButton .lazyImage {
+  object-fit: cover !important;
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideBody.hasReferenceItems .referencePreviewButton:hover img,
+.studioLayout .creationDesk .referenceSidePanel.isOpen .referenceSideBody.hasReferenceItems .referencePreviewButton:focus-visible img {
+  transform: scale(1.035) !important;
+}
+
+@media (max-width: 760px) {
+  .creationDesk.composerOpen:not(.composerFolded) .bottomComposerBar.isExpandedComposer .composerThread {
+    mask-image: linear-gradient(to bottom, transparent 0, transparent 10px, #000 26px, #000 calc(100% - 12px), transparent 100%) !important;
+  }
+}
+
+/* Mobile final lock: keep the expanded chat readable instead of inheriting narrow shell math. */
+@media (max-width: 760px) {
+  .creationDesk.composerOpen .bottomComposerBar,
+  .creationDesk.referencesOpen.composerOpen .bottomComposerBar,
+  .creationDesk.paramRailCollapsed.composerOpen .bottomComposerBar,
+  .creationDesk.composerOpen .bottomComposerBar.noThread,
+  .creationDesk.composerOpen .bottomComposerBar.noThread.hasLineage,
+  .creationDesk.composerOpen .bottomComposerBar.noThread.noReferences,
+  .creationDesk.composerOpen .bottomComposerBar.noThread.noReferences.hasLineage,
+  .creationDesk.composerOpen .bottomComposerBar.noThread.noReferences.paramsCollapsed,
+  .creationDesk.composerOpen .bottomComposerBar.noThread.noReferences.paramsCollapsed.hasLineage,
+  .creationDesk.composerOpen .bottomComposerBar.hasThread,
+  .creationDesk.composerOpen .bottomComposerBar.hasThread.hasLineage,
+  .creationDesk.composerOpen .bottomComposerBar.paramsCollapsed.hasThread,
+  .creationDesk.composerOpen .bottomComposerBar.paramsCollapsed.hasThread.hasLineage {
+    left: calc((100vw - var(--rail-width, 58px)) / 2) !important;
+    right: auto !important;
+    bottom: 18px !important;
+    width: min(320px, calc(100vw - var(--rail-width, 58px) - 24px)) !important;
+    min-width: min(320px, calc(100vw - var(--rail-width, 58px) - 24px)) !important;
+    max-width: min(320px, calc(100vw - var(--rail-width, 58px) - 24px)) !important;
+    height: min(560px, calc(100vh - 48px)) !important;
+    min-height: min(420px, calc(100vh - 48px)) !important;
+    max-height: calc(100vh - 48px) !important;
+    transform: translateX(-50%) !important;
+    grid-template-rows: 30px minmax(0, 1fr) 62px 34px !important;
+    gap: 10px !important;
+  }
+
+  .creationDesk.composerOpen .composerPanelHead,
+  .creationDesk.composerOpen .bottomComposerBar.noThread .composerPanelHead,
+  .creationDesk.composerOpen .bottomComposerBar.noThread.noReferences .composerPanelHead {
+    height: 30px !important;
+    min-height: 30px !important;
+  }
+
+  .creationDesk.composerOpen .composerThread {
+    padding-top: 2px !important;
+    padding-bottom: 10px !important;
+    max-height: none !important;
+  }
+
+  .creationDesk.composerOpen .composerMessage.user {
+    min-width: min(224px, calc(100% - 8px)) !important;
+    max-width: calc(100% - 8px) !important;
+  }
+
+  .creationDesk.composerOpen .composerMessage.user > p {
+    min-width: min(184px, 100%) !important;
+  }
+
+  .creationDesk.composerOpen .composerPromptRow,
+  .creationDesk.composerOpen .bottomComposerBar.noThread .composerPromptRow,
+  .creationDesk.composerOpen .bottomComposerBar.noThread.noReferences .composerPromptRow {
+    height: 62px !important;
+    min-height: 62px !important;
+    grid-template-columns: minmax(0, 1fr) 84px !important;
+  }
+
+  .creationDesk.composerOpen .bottomComposerInput textarea,
+  .creationDesk.composerOpen .bottomComposerBar.noThread .bottomComposerInput textarea,
+  .creationDesk.composerOpen .bottomComposerBar.noThread.noReferences .bottomComposerInput textarea {
+    height: 62px !important;
+    min-height: 62px !important;
+    max-height: 62px !important;
+  }
+
+  .creationDesk.composerOpen .composerActionGroup,
+  .creationDesk.composerOpen .bottomComposerBar.noThread .composerActionGroup,
+  .creationDesk.composerOpen .bottomComposerBar.noThread.noReferences .composerActionGroup {
+    height: 62px !important;
+  }
+
+  .creationDesk.composerOpen .composerParamShelf,
+  .creationDesk.composerOpen .composerParamShelf.isCollapsed,
+  .creationDesk.composerOpen .bottomComposerBar.noThread .composerParamShelf,
+  .creationDesk.composerOpen .bottomComposerBar.noThread .composerParamShelf.isCollapsed,
+  .creationDesk.composerOpen .bottomComposerBar.noThread.noReferences .composerParamShelf,
+  .creationDesk.composerOpen .bottomComposerBar.noThread.noReferences .composerParamShelf.isCollapsed {
+    height: 34px !important;
+    min-height: 34px !important;
+  }
+}
+
+/* Canvas edit clarity lock: inline editing should not visually blur nearby nodes. */
+.canvasInlineEditor {
+  background: color-mix(in srgb, var(--studio-surface-strong) 98%, transparent) !important;
+  backdrop-filter: none !important;
+  box-shadow:
+    0 12px 30px rgba(15, 23, 42, 0.14),
+    0 0 0 1px color-mix(in srgb, var(--studio-primary) 16%, transparent) inset !important;
+}
+
+.graphNode.editing {
+  box-shadow:
+    0 0 0 4px color-mix(in srgb, var(--studio-primary) 18%, transparent),
+    0 20px 54px rgba(10, 163, 156, 0.18) !important;
+}
+
+.canvasLinks.hasSelection .canvasLinkGroup.idle .canvasLinkGlow,
+.canvasLinks.hasSelection .canvasLinkGroup.idle .canvasLinkPath,
+.canvasLinks.hasSelection .canvasLinkGroup.idle .canvasLinkJoint,
+.canvasLinks.hasSelection .canvasLinkGroup.idle .canvasLinkJointCore,
+.canvasLinks.hasSelection .canvasLinkGroup.idle .canvasLinkLabel {
+  opacity: 0.26 !important;
+}
+
+.canvasLinkGroup.active .canvasLinkPath,
+.canvasLinkGroup.active .canvasLinkJoint {
+  filter: none !important;
+}
+

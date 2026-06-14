@@ -1,0 +1,361 @@
+﻿/* Conversation-first refinement: make the left side work like a chat/session rail. */
+.studioLayout {
+  width: 100%;
+}
+
+.studioLayout,
+.studioLayout.railCollapsed {
+  grid-template-columns: 168px minmax(0, 1fr);
+}
+
+.studioLayout.railCollapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.templateRail {
+  min-width: 0;
+  padding: 14px 7px 12px;
+}
+
+.templateRail.collapsed {
+  width: 64px;
+  padding: 10px 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-right: 1px solid var(--studio-border);
+  background: var(--studio-surface-strong);
+}
+
+.sideBrand {
+  margin-bottom: 12px;
+}
+
+.sideBrand > span:last-of-type {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.sideBrand em {
+  color: var(--studio-muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.newChatButton {
+  width: 100%;
+  min-height: 38px;
+  margin-bottom: 10px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--studio-border-strong);
+  border-radius: 8px;
+  background: var(--studio-text-strong);
+  color: var(--studio-on-dark);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.sideChatBlock {
+  margin-top: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.sideProjectHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sideProjectHead button {
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--studio-border);
+  border-radius: 999px;
+  background: var(--studio-surface-soft);
+  color: var(--studio-primary);
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.sideProjectList {
+  display: grid;
+  gap: 8px;
+}
+
+.sideProjectItem {
+  position: relative;
+  display: block;
+}
+
+.sideProjectOpen {
+  width: 100%;
+  min-height: 86px;
+  padding: 8px 30px 8px 8px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 9px;
+  align-items: stretch;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  background: var(--studio-surface-strong);
+  color: var(--studio-text);
+  text-align: left;
+  box-shadow: var(--studio-shadow-soft);
+}
+
+.sideProjectItem.active .sideProjectOpen,
+.sideProjectOpen:hover {
+  border-color: color-mix(in srgb, var(--studio-primary) 34%, var(--studio-border));
+  background: color-mix(in srgb, var(--studio-primary) 6%, var(--studio-surface-strong));
+}
+
+.sideProjectThumb {
+  position: relative;
+  width: 52px;
+  height: 70px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--studio-border) 78%, transparent);
+  border-radius: 7px;
+  background: var(--studio-surface-hover);
+}
+
+.sideProjectThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sideProjectIndex {
+  position: absolute;
+  left: 5px;
+  bottom: 5px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.68);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 1.1;
+}
+
+.sideProjectText {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 3px;
+}
+
+.sideProjectTopline {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.sideProjectOpen strong,
+.sideProjectOpen em,
+.sideProjectOpen small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sideProjectOpen strong {
+  color: var(--studio-text-strong);
+  font-size: 11px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.sideProjectOpen b {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--studio-primary) 10%, var(--studio-surface-soft));
+  color: var(--studio-primary);
+  font-size: 9px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.sideProjectOpen em {
+  color: var(--studio-muted);
+  font-size: 10px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.sideProjectOpen small {
+  color: color-mix(in srgb, var(--studio-muted) 86%, var(--studio-text));
+  font-size: 10px;
+  font-weight: 780;
+  line-height: 1.24;
+  display: -webkit-box;
+  white-space: normal;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.sideProjectDelete {
+  position: absolute;
+  top: 8px;
+  right: 7px;
+  width: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--studio-border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--studio-surface-soft) 88%, transparent);
+  color: var(--studio-muted);
+  opacity: 0.68;
+}
+
+.sideProjectItem:hover .sideProjectDelete {
+  opacity: 1;
+}
+
+.sideProjectDelete:hover {
+  color: #b22732;
+  border-color: color-mix(in srgb, #b22732 32%, var(--studio-border));
+}
+
+.sideChatCard {
+  min-height: 72px;
+  padding: 9px 8px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 7px;
+  align-items: start;
+  border: 1px solid var(--studio-border);
+  border-radius: 8px;
+  background: var(--studio-surface-strong);
+  color: var(--studio-text);
+  text-align: left;
+  box-shadow: var(--studio-shadow-soft);
+}
+
+.sideChatCard.active {
+  border-color: var(--studio-border-strong);
+}
+
+.emptyProjectCard {
+  width: 100%;
+}
+
+.sideChatIcon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--studio-surface-hover);
+  color: var(--studio-primary);
+}
+
+.sideChatCard strong,
+.sideChatCard em {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sideChatCard strong {
+  color: var(--studio-text-strong);
+  font-size: 12px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.sideChatCard em {
+  margin-top: 4px;
+  color: var(--studio-muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.sideRecentBlock {
+  margin-top: 18px;
+}
+
+.sideLibraryBlock {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--studio-border);
+}
+
+.railBottomBar {
+  padding-top: 10px;
+  border-top: 1px solid var(--studio-border);
+}
+
+.railIconAction {
+  flex: 0 0 auto;
+  border-radius: 10px;
+}
+
+.railAvatarButton {
+  width: 40px;
+  height: 40px;
+  margin-top: auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--studio-border);
+  border-radius: 10px;
+  background: var(--studio-text-strong);
+  color: var(--studio-on-dark);
+}
+
+.collapsedRailAvatar {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #d9b686, #eef4f3);
+  color: var(--studio-text-strong);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.creationDesk {
+  grid-template-columns: minmax(300px, 1.08fr) minmax(260px, 0.92fr) 64px;
+  gap: 12px;
+  padding: 14px 12px 12px 14px;
+}
+
+.studioLayout.railCollapsed .creationDesk {
+  grid-template-columns: minmax(0, 1fr) 64px;
+}
+
+.bottomComposerBar::before,
+.creationDesk .bottomComposerBar::before {
+  content: "浼氳瘽";
+  min-width: 30px;
+}
+
+html[lang="en"] .bottomComposerBar::before,
+html[lang="en"] .creationDesk .bottomComposerBar::before {
+  content: "Chat";
+}
+
+.bottomComposerBar span,
+.creationDesk .bottomComposerBar span {
+  color: var(--studio-text);
+}

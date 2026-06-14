@@ -25,7 +25,7 @@ If you are exploring AI image workflows, OpenAI-compatible image endpoints, gate
 </p>
 
 
-## What 0.9 Beta Does
+## What 1.0.0 Provides
 
 - Image generation uses `/v1/images/generations` by default and calls image models such as `gpt-image-2` directly, avoiding accidental `/v1/responses` fallback paths.
 - Reference-image editing and mask redraw use `/v1/images/edits`.
@@ -77,7 +77,7 @@ The open-source package does not include real API keys, the private production i
 
 - Security boundary, key handling, stored data, and production hardening notes: [SECURITY.md](SECURITY.md).
 - Provider and gateway integration direction: [docs/PROVIDERS.md](docs/PROVIDERS.md).
-- 0.9 beta notes, migration impact, and verification checklist: [RELEASE_NOTES.md](RELEASE_NOTES.md).
+- 1.0.0 release notes, migration impact, and verification checklist: [RELEASE_NOTES.md](RELEASE_NOTES.md).
 - Source-code license scope: [LICENSE](LICENSE). Community prompt templates and third-party content are not automatically relicensed as MIT code.
 
 ## Local Run
