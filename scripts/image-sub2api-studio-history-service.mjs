@@ -247,6 +247,7 @@ const VIDEO_INSPIRATIONS = [
 const jobQueues = new Map();
 const activeJobControllers = new Map();
 const jobStorageLocks = new Map();
+const COMMUNITY_PROMPT_LIMIT = 300;
 
 function sendJson(res, status, payload) {
   res.writeHead(status, {
@@ -402,6 +403,10 @@ function jobsPath(auth) {
   return path.join(auth.userDir, 'jobs.json');
 }
 
+function communityPromptsPath(auth) {
+  return path.join(auth.userDir, 'community-prompts.json');
+}
+
 function backupsDir(auth) {
   return path.join(auth.userDir, 'backups');
 }
@@ -420,6 +425,57 @@ async function readRecords(auth) {
 async function writeRecords(auth, records) {
   await ensureUserDirs(auth);
   await fs.writeFile(recordsPath(auth), JSON.stringify(records.slice(0, HISTORY_LIMIT), null, 2));
+}
+
+function sanitizeCommunityPrompt(value, fallback = {}) {
+  const createdAt = text(value?.createdAt || fallback.createdAt || new Date().toISOString(), 60);
+  const prompt = text(value?.prompt, 12000);
+  const title = text(value?.title || prompt.slice(0, 80) || 'Untitled prompt', 160);
+  const category = text(value?.category || 'Community Prompts', 120);
+  const id = text(value?.id || fallback.id || `share-${randomUUID()}`, 120);
+  const reactions = value?.reactions && typeof value.reactions === 'object' ? value.reactions : {};
+  const up = Math.max(0, Number(reactions.up || value?.up || 0));
+  const down = Math.max(0, Number(reactions.down || value?.down || 0));
+  return {
+    id,
+    kind: 'community-prompt',
+    title,
+    prompt,
+    promptPreview: text(value?.promptPreview || prompt, 800),
+    category,
+    sourceName: text(value?.sourceName || 'User shared', 120),
+    note: text(value?.note || '', 800),
+    tags: Array.isArray(value?.tags) ? value.tags.slice(0, 8).map((item) => text(item, 40)).filter(Boolean) : [],
+    visibility: value?.visibility === 'private' ? 'private' : 'workspace',
+    createdAt,
+    updatedAt: text(value?.updatedAt || createdAt, 60),
+    reactions: { up, down },
+    copied: Math.max(0, Number(value?.copied || 0)),
+    shared: Math.max(0, Number(value?.shared || 0)),
+    userReaction: ['up', 'down'].includes(value?.userReaction) ? value.userReaction : ''
+  };
+}
+
+async function readCommunityPrompts(auth) {
+  try {
+    const raw = await fs.readFile(communityPromptsPath(auth), 'utf8');
+    const parsed = parseJsonText(raw);
+    const items = Array.isArray(parsed?.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
+    return items.map((item) => sanitizeCommunityPrompt(item)).filter((item) => item.prompt);
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+async function writeCommunityPrompts(auth, items) {
+  await ensureUserDirs(auth);
+  const nextItems = items
+    .map((item) => sanitizeCommunityPrompt(item))
+    .filter((item) => item.prompt)
+    .slice(0, COMMUNITY_PROMPT_LIMIT);
+  await fs.writeFile(communityPromptsPath(auth), JSON.stringify({ items: nextItems }, null, 2));
+  return nextItems;
 }
 
 async function readSession(auth, sessionId = '') {
@@ -894,12 +950,13 @@ function sanitizeVideoInspirationDetail(item) {
   };
 }
 
-async function readLibrary() {
+async function readLibrary(auth = null) {
   const localData = await readJsonFile(path.join(LIBRARY_DIR, 'cases.json'), { cases: [] });
   const inspirationData = await readJsonFile(path.join(LIBRARY_DIR, 'inspirations.json'), { cases: [] });
   const localCases = Array.isArray(localData?.cases) ? localData.cases : [];
   const inspirationCases = Array.isArray(inspirationData?.cases) ? inspirationData.cases : [];
-  const rawCases = [...localCases, ...inspirationCases].filter((item) => item && item.id !== undefined && item.id !== null);
+  const communityCases = auth ? await readCommunityPrompts(auth) : [];
+  const rawCases = [...communityCases, ...localCases, ...inspirationCases].filter((item) => item && item.id !== undefined && item.id !== null);
   const cases = rawCases.map(sanitizeLibrarySummary);
   return {
     rawCases,
@@ -910,6 +967,7 @@ async function readLibrary() {
       categories: [...new Set([
         ...(Array.isArray(localData?.categories) ? localData.categories : []),
         ...(Array.isArray(inspirationData?.categories) ? inspirationData.categories : []),
+        ...communityCases.map((item) => item.category).filter(Boolean),
         ...cases.map((item) => item.category).filter(Boolean)
       ])].sort(),
       styles: [...new Set(cases.flatMap((item) => item.styles || []))].sort(),
@@ -1768,7 +1826,7 @@ async function handler(req, res) {
     });
   }
 
-  if (parts[0] !== 'studio-api' || !['history', 'session', 'generation-jobs', 'library', 'library-assets', 'prompt-presets', 'video-inspirations', 'backup'].includes(parts[1])) {
+  if (parts[0] !== 'studio-api' || !['history', 'session', 'generation-jobs', 'library', 'library-assets', 'community-prompts', 'prompt-presets', 'video-inspirations', 'backup'].includes(parts[1])) {
     return sendJson(res, 404, { ok: false, error: 'NOT_FOUND' });
   }
 
@@ -1878,16 +1936,72 @@ async function handler(req, res) {
     }
 
     if (req.method === 'GET' && parts[0] === 'studio-api' && parts[1] === 'library' && parts.length === 2) {
-      const { payload } = await readLibrary();
+      const { payload } = await readLibrary(auth);
       return sendJson(res, 200, payload);
     }
 
     if (req.method === 'GET' && parts[0] === 'studio-api' && parts[1] === 'library' && parts.length === 3) {
       const id = cleanLibraryId(decodeURIComponent(parts[2]));
-      const { rawCases } = await readLibrary();
+      const { rawCases } = await readLibrary(auth);
       const item = rawCases.find((caseItem) => String(caseItem.id) === id);
       if (!item) return sendJson(res, 404, { ok: false, error: 'LIBRARY_ITEM_NOT_FOUND' });
       return sendJson(res, 200, { ok: true, case: sanitizeLibraryDetail(item) });
+    }
+
+    if (req.method === 'GET' && parts[0] === 'studio-api' && parts[1] === 'community-prompts' && parts.length === 2) {
+      const items = await readCommunityPrompts(auth);
+      return sendJson(res, 200, { ok: true, items });
+    }
+
+    if (req.method === 'POST' && parts[0] === 'studio-api' && parts[1] === 'community-prompts' && parts.length === 2) {
+      const body = await readJsonBody(req);
+      const prompt = text(body.prompt, 12000);
+      if (!prompt) return sendJson(res, 400, { ok: false, error: 'PROMPT_REQUIRED' });
+      const now = new Date().toISOString();
+      const item = sanitizeCommunityPrompt({
+        id: `share-${randomUUID()}`,
+        title: body.title,
+        prompt,
+        promptPreview: body.promptPreview || prompt,
+        category: body.category || 'Community Prompts',
+        note: body.note,
+        tags: body.tags,
+        visibility: body.visibility,
+        createdAt: now,
+        updatedAt: now,
+        sourceName: auth.user?.username || auth.user?.email || 'User shared'
+      });
+      const items = await readCommunityPrompts(auth);
+      const nextItems = await writeCommunityPrompts(auth, [item, ...items.filter((entry) => entry.id !== item.id)]);
+      return sendJson(res, 200, { ok: true, item: nextItems[0] });
+    }
+
+    if (req.method === 'POST' && parts[0] === 'studio-api' && parts[1] === 'community-prompts' && parts.length === 4 && parts[3] === 'reaction') {
+      const id = cleanLibraryId(decodeURIComponent(parts[2]));
+      const body = await readJsonBody(req);
+      const action = text(body.action, 20);
+      const items = await readCommunityPrompts(auth);
+      const index = items.findIndex((item) => String(item.id) === id);
+      if (index < 0) return sendJson(res, 404, { ok: false, error: 'COMMUNITY_PROMPT_NOT_FOUND' });
+      const item = { ...items[index] };
+      const reactions = { ...(item.reactions || {}) };
+      if (action === 'up' || action === 'down') {
+        const previous = item.userReaction;
+        if (previous && reactions[previous] > 0) reactions[previous] -= 1;
+        item.userReaction = previous === action ? '' : action;
+        if (item.userReaction) reactions[item.userReaction] = Math.max(0, Number(reactions[item.userReaction] || 0)) + 1;
+      } else if (action === 'copy') {
+        item.copied = Math.max(0, Number(item.copied || 0)) + 1;
+      } else if (action === 'share') {
+        item.shared = Math.max(0, Number(item.shared || 0)) + 1;
+      } else {
+        return sendJson(res, 400, { ok: false, error: 'ACTION_NOT_SUPPORTED' });
+      }
+      item.reactions = reactions;
+      item.updatedAt = new Date().toISOString();
+      items[index] = item;
+      await writeCommunityPrompts(auth, items);
+      return sendJson(res, 200, { ok: true, item: sanitizeCommunityPrompt(item) });
     }
 
     if (req.method === 'GET' && parts[0] === 'studio-api' && parts[1] === 'prompt-presets' && parts.length === 3) {

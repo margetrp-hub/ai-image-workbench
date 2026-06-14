@@ -59,6 +59,7 @@
     "smoke:inspiration:windowing": "npm exec --yes --package=playwright -- node scripts/smoke-inspiration-windowing.mjs",
     "smoke:inspiration:reference-flow": "node scripts/smoke-inspiration-reference-flow.mjs",
     "smoke:inspiration:prompt-zone": "npm exec --yes --package=playwright -- node scripts/smoke-inspiration-prompt-zone.mjs",
+    "smoke:community:prompt-flow": "npm exec --yes --package=playwright -- node scripts/smoke-community-prompt-flow.mjs",
     "smoke:template:windowing": "npm exec --yes --package=playwright -- node scripts/smoke-template-windowing.mjs",
     "smoke:language:en": "npm exec --yes --package=playwright -- node scripts/smoke-language-english.mjs",
     "smoke:persistence": "node scripts/smoke-history-service-persistence.mjs",

@@ -1664,6 +1664,27 @@ export class StudioHistoryClient {
     return payload.case || null;
   }
 
+  async listCommunityPrompts() {
+    const payload = await this.request('/community-prompts');
+    return Array.isArray(payload.items) ? payload.items : [];
+  }
+
+  async createCommunityPrompt(item) {
+    const payload = await this.request('/community-prompts', {
+      method: 'POST',
+      body: JSON.stringify(item)
+    });
+    return payload.item || null;
+  }
+
+  async reactCommunityPrompt(promptId, action) {
+    const payload = await this.request(`/community-prompts/${encodeURIComponent(promptId)}/reaction`, {
+      method: 'POST',
+      body: JSON.stringify({ action })
+    });
+    return payload.item || null;
+  }
+
   async getPromptPreset(presetId) {
     const payload = await this.request(`/prompt-presets/${encodeURIComponent(presetId)}`);
     return payload.preset || null;

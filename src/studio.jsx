@@ -23,10 +23,13 @@ import {
   PanelLeftOpen,
   Search,
   Server,
+  Share2,
   SlidersHorizontal,
   Sparkles,
   Star,
   Sun,
+  ThumbsDown,
+  ThumbsUp,
   Undo2,
   Redo2,
   FlipHorizontal,
@@ -1804,7 +1807,7 @@ function CaseCard({ item, selected, onSelect, onPreview, favorite, onToggleFavor
   );
 }
 
-function PromptCaseCard({ item, selected, onSelect, favorite, onToggleFavorite, onAppend, t = (key, fallback) => fallback || key }) {
+function PromptCaseCard({ item, selected, onSelect, favorite, onToggleFavorite, onAppend, onReact, t = (key, fallback) => fallback || key }) {
   const meta = caseCardMeta(item);
   const promptPreview = item.promptPreview || item.summary || item.prompt || '';
   return (
@@ -1815,6 +1818,24 @@ function PromptCaseCard({ item, selected, onSelect, favorite, onToggleFavorite, 
         <p className="casePromptExcerpt">{compact(promptPreview, 180) || t('gallery.promptOnlyHint', '这条灵感暂时没有可用图片，但提示词仍可预览和选用。')}</p>
         {meta ? <em>{meta}</em> : null}
       </button>
+      <div className="communityPromptStats">
+        <button type="button" className={item.userReaction === 'up' ? 'active' : ''} onClick={(event) => { event.stopPropagation(); onReact?.(item, 'up'); }}>
+          <ThumbsUp size={12} />
+          {item.reactions?.up || 0}
+        </button>
+        <button type="button" className={item.userReaction === 'down' ? 'active' : ''} onClick={(event) => { event.stopPropagation(); onReact?.(item, 'down'); }}>
+          <ThumbsDown size={12} />
+          {item.reactions?.down || 0}
+        </button>
+        <button type="button" onClick={(event) => { event.stopPropagation(); onReact?.(item, 'copy'); }}>
+          <Copy size={12} />
+          {item.copied || 0}
+        </button>
+        <button type="button" onClick={(event) => { event.stopPropagation(); onReact?.(item, 'share'); }}>
+          <Share2 size={12} />
+          {item.shared || 0}
+        </button>
+      </div>
       <div className="caseTileActions">
         {onAppend ? (
           <button
@@ -1944,7 +1965,9 @@ function GalleryWorkspacePanel({
   showFavoritesOnly,
   onToggleFavoritesOnly,
   onToggleTemplateFavorite,
+  onReactTemplate,
   onAppendTemplate,
+  onOpenUpload,
   licenseNotice,
   onOpenWorkspace,
   t = (key, fallback) => fallback || key
@@ -2132,6 +2155,14 @@ function GalleryWorkspacePanel({
           <>
             <button
               type="button"
+              className="galleryFilterButton uploadInspirationButton"
+              onClick={onOpenUpload}
+            >
+              <Upload size={15} />
+              {t('gallery.uploadInspiration', '上传灵感')}
+            </button>
+            <button
+              type="button"
               className={`galleryFilterButton ${showFavoritesOnly ? 'active' : ''}`}
               onClick={onToggleFavoritesOnly}
             >
@@ -2235,6 +2266,7 @@ function GalleryWorkspacePanel({
                       onSelect={selectLibraryItem}
                       favorite={favoriteTemplates.has(templateKey(item))}
                       onToggleFavorite={onToggleTemplateFavorite}
+                      onReact={onReactTemplate}
                       onAppend={useLibraryItem}
                       t={t}
                       key={item.id}
@@ -7218,6 +7250,79 @@ function SettingsPanel({
   );
 }
 
+function InspirationUploadDialog({ open, onClose, onSubmit, t = (key, fallback) => fallback || key }) {
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState('Community Prompts');
+  const [prompt, setPrompt] = useState('');
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const canSubmit = prompt.trim().length >= 8;
+
+  if (!open) return null;
+
+  async function submit(event) {
+    event.preventDefault();
+    if (!canSubmit || submitting) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        title: title.trim() || prompt.trim().slice(0, 52),
+        category: category.trim() || 'Community Prompts',
+        prompt: prompt.trim(),
+        note: note.trim()
+      });
+      setTitle('');
+      setCategory('Community Prompts');
+      setPrompt('');
+      setNote('');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="settingsOverlay inspirationUploadOverlay" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose();
+    }}>
+      <form className="providerSettingsPanel inspirationUploadPanel" onSubmit={submit}>
+        <div className="settingsHeader">
+          <div>
+            <span>{t('gallery.uploadInspiration', '上传灵感')}</span>
+            <h2>{t('gallery.uploadTitle', '分享一个好提示词')}</h2>
+            <p>{t('gallery.uploadHint', '先保存到你的个人灵感广场，后续可以再做公开审核和精选。')}</p>
+          </div>
+          <button type="button" className="iconButton" onClick={onClose} aria-label={t('settings.close', '关闭')}>
+            <X size={18} />
+          </button>
+        </div>
+        <label>
+          <span>{t('gallery.promptTitle', '标题')}</span>
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder={t('gallery.promptTitlePlaceholder', '例如：电商主图质感提示词')} />
+        </label>
+        <label>
+          <span>{t('gallery.promptCategory', '分类')}</span>
+          <input value={category} onChange={(event) => setCategory(event.target.value)} placeholder="Community Prompts" />
+        </label>
+        <label>
+          <span>{t('gallery.promptContent', '提示词')}</span>
+          <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={8} placeholder={t('gallery.promptContentPlaceholder', '粘贴你觉得值得复用的完整提示词...')} />
+        </label>
+        <label>
+          <span>{t('gallery.promptNote', '说明')}</span>
+          <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={t('gallery.promptNotePlaceholder', '适合什么场景、需要注意什么，可选')} />
+        </label>
+        <div className="settingsActions">
+          <button type="button" onClick={onClose}>{t('settings.cancel', '取消')}</button>
+          <button type="submit" className="primaryAction" disabled={!canSubmit || submitting}>
+            {submitting ? <LoaderCircle size={16} className="spin" /> : <Upload size={16} />}
+            {t('gallery.publishPrompt', '保存到广场')}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function StudioApp() {
   const initialCurrentSession = useMemo(() => loadCurrentSession(), []);
   const [siteData, setSiteData] = useState(null);
@@ -7233,6 +7338,7 @@ function StudioApp() {
   const [favoriteTemplates, setFavoriteTemplates] = useState(() => loadTemplateFavorites());
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [inspirationUploadOpen, setInspirationUploadOpen] = useState(false);
   const [bootError, setBootError] = useState('');
   const [historyItems, setHistoryItems] = useState(() => loadHistory());
   const [historyStatus, setHistoryStatus] = useState('idle');
@@ -7689,6 +7795,40 @@ function StudioApp() {
     });
   }
 
+  async function handleCreateCommunityPrompt(item) {
+    const historyClient = new StudioHistoryClient({ session });
+    const created = await historyClient.createCommunityPrompt(item);
+    if (!created) return;
+    setSiteData((current) => ({
+      ...(current || {}),
+      cases: [created, ...((current?.cases || []).filter((caseItem) => String(caseItem.id) !== String(created.id)))]
+    }));
+    setCategory(created.category || 'Community Prompts');
+    setActiveWorkspace('inspiration');
+    setInspirationUploadOpen(false);
+  }
+
+  async function handleReactTemplate(item, action) {
+    if (action === 'copy') {
+      const prompt = item.prompt || item.promptPreview || item.summary || '';
+      if (prompt) await navigator.clipboard?.writeText(prompt).catch(() => {});
+    }
+    if (action === 'share') {
+      const prompt = item.prompt || item.promptPreview || item.summary || '';
+      const shareText = `${item.title || 'Prompt'}\n\n${prompt}`;
+      if (navigator.share) await navigator.share({ title: item.title || 'Prompt', text: shareText }).catch(() => {});
+      else if (prompt) await navigator.clipboard?.writeText(shareText);
+    }
+    if (!String(item?.id || '').startsWith('share-')) return;
+    const historyClient = new StudioHistoryClient({ session });
+    const updated = await historyClient.reactCommunityPrompt(item.id, action).catch(() => null);
+    if (!updated) return;
+    setSiteData((current) => current?.cases ? ({
+      ...current,
+      cases: current.cases.map((caseItem) => String(caseItem.id) === String(updated.id) ? { ...caseItem, ...updated } : caseItem)
+    }) : current);
+  }
+
   function handleToggleTemplateFavorite(item) {
     const key = templateKey(item);
     if (!key) return;
@@ -7936,7 +8076,9 @@ function handleSelectHistory(item, options = {}) {
             showFavoritesOnly={showFavoritesOnly}
             onToggleFavoritesOnly={() => setShowFavoritesOnly((value) => !value)}
             onToggleTemplateFavorite={handleToggleTemplateFavorite}
+            onReactTemplate={handleReactTemplate}
             onAppendTemplate={handleAppendTemplate}
+            onOpenUpload={() => setInspirationUploadOpen(true)}
             licenseNotice={siteData?.license}
             onOpenWorkspace={(workspace) => handleWorkspaceChange(workspace, { preserveHistory: true })}
             t={t}
@@ -7968,7 +8110,9 @@ function handleSelectHistory(item, options = {}) {
             showFavoritesOnly={showFavoritesOnly}
             onToggleFavoritesOnly={() => setShowFavoritesOnly((value) => !value)}
             onToggleTemplateFavorite={handleToggleTemplateFavorite}
+            onReactTemplate={handleReactTemplate}
             onAppendTemplate={handleAppendTemplate}
+            onOpenUpload={() => setInspirationUploadOpen(true)}
             licenseNotice={siteData?.license}
             onOpenWorkspace={(workspace) => handleWorkspaceChange(workspace, { preserveHistory: true })}
             t={t}
@@ -7987,6 +8131,12 @@ function handleSelectHistory(item, options = {}) {
         modelsStatus={modelsStatus}
         isAuthenticated={Boolean(session?.accessToken)}
         onLogin={handleRequireLogin}
+        t={t}
+      />
+      <InspirationUploadDialog
+        open={inspirationUploadOpen}
+        onClose={() => setInspirationUploadOpen(false)}
+        onSubmit={handleCreateCommunityPrompt}
         t={t}
       />
     </main>

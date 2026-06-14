@@ -329,6 +329,52 @@
   grid-row: auto !important;
 }
 
+.communityPromptStats {
+  position: absolute !important;
+  left: 10px !important;
+  right: 86px !important;
+  bottom: 10px !important;
+  z-index: 3 !important;
+  display: flex !important;
+  gap: 5px !important;
+}
+
+.communityPromptStats button {
+  height: 30px !important;
+  min-width: 30px !important;
+  padding: 0 7px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  border: 1px solid color-mix(in srgb, var(--studio-border) 80%, transparent) !important;
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--studio-surface-strong) 88%, transparent) !important;
+  color: var(--studio-muted) !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+}
+
+.communityPromptStats button:hover,
+.communityPromptStats button.active {
+  border-color: color-mix(in srgb, var(--studio-primary) 38%, var(--studio-border)) !important;
+  background: color-mix(in srgb, var(--studio-primary) 10%, var(--studio-surface-soft)) !important;
+  color: var(--studio-primary) !important;
+}
+
+.uploadInspirationButton {
+  border-color: color-mix(in srgb, var(--studio-primary) 26%, var(--studio-border)) !important;
+  color: var(--studio-primary) !important;
+}
+
+.inspirationUploadPanel {
+  width: min(680px, calc(100vw - 28px)) !important;
+}
+
+.inspirationUploadPanel textarea {
+  resize: vertical !important;
+}
+
 .lightboxPromptOnlyStage {
   width: min(420px, 86%) !important;
   min-height: 260px !important;
